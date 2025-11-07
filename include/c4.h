@@ -88,4 +88,24 @@ int c4id_digest_cmp(const c4_digest_t* a, const c4_digest_t* b);
 /* Free a digest */
 void c4id_digest_free(c4_digest_t* digest);
 
+/* Legacy API - deprecated but provided for backward compatibility */
+
+/* Use c4id_free() instead */
+void c4id_release(c4_id_t* id);
+
+/* Use c4id_encoder_new() instead */
+c4id_encoder_t* c4id_new_encoder(void);
+
+/* Use c4id_encoder_write() instead */
+void c4id_encoder_update(c4id_encoder_t* enc, unsigned char* data, int size);
+
+/* Use c4id_encoder_id() instead */
+c4_id_t* c4id_encoded_id(c4id_encoder_t* enc);
+
+/* Use c4id_encoder_free() instead */
+void c4id_release_encoder(c4id_encoder_t* enc);
+
+/* Use c4id_digest_to_id() instead */
+c4_id_t* c4id_digest_id(c4_digest_t* digest);
+
 #endif /* C4_H */
