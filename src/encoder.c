@@ -1,56 +1,128 @@
-// package id
-#include <openssl/evp.h>
+#include "../include/c4.h"
+#include "c4_internal.h"
 #include <gmp.h>
+#include <stdlib.h>
+#include <string.h>
 
-// Encoder generates an c4_id_t for a contiguous bock of data.
-typedef struct {
-	// SHA512_CTX *c;
-	EVP_MD_CTX *c;
-} c4id_encoder_t;
+c4id_encoder_t* c4id_encoder_new(void) {
+	c4id_encoder_t* enc = malloc(sizeof(c4id_encoder_t));
+	if (enc == NULL) {
+		return NULL;
+	}
 
-typedef big_int_t c4_id_t;
-typedef unsigned char byte;
+	enc->ctx = EVP_MD_CTX_create();
+	if (enc->ctx == NULL) {
+		free(enc);
+		return NULL;
+	}
 
-// NewEncoder makes a new Encoder.
-c4id_encoder_t* c4id_new_encoder() {
-	c4id_encoder_t* e = malloc(sizeof(c4id_encoder_t));
-	e->c = EVP_MD_CTX_create();
-	EVP_DigestInit_ex(e->c, EVP_sha512(), NULL);
-	return e;
+	EVP_DigestInit_ex(enc->ctx, EVP_sha512(), NULL);
+	return enc;
 }
 
-void c4id_release_encoder(c4id_encoder_t* e) {
-	if (e != NULL) {
-		if (e->c != NULL) {
-			EVP_MD_CTX_destroy(e->c);
-		}
-		free(e);
+void c4id_encoder_write(c4id_encoder_t* enc, const void* data, size_t size) {
+	if (enc == NULL || data == NULL) {
+		return;
+	}
+	EVP_DigestUpdate(enc->ctx, data, size);
+}
+
+c4_id_t* c4id_encoder_id(c4id_encoder_t* enc) {
+	if (enc == NULL) {
+		return NULL;
+	}
+
+	byte md[64];
+	unsigned int md_len;
+
+	/* Create a copy of the context to avoid finalizing the original */
+	EVP_MD_CTX* ctx_copy = EVP_MD_CTX_create();
+	if (ctx_copy == NULL) {
+		return NULL;
+	}
+
+	EVP_MD_CTX_copy_ex(ctx_copy, enc->ctx);
+	EVP_DigestFinal_ex(ctx_copy, md, &md_len);
+	EVP_MD_CTX_destroy(ctx_copy);
+
+	c4_id_t* id = malloc(sizeof(c4_id_t));
+	if (id == NULL) {
+		return NULL;
+	}
+
+	big_int_t* n = new_big_int(512);
+	if (n == NULL) {
+		free(id);
+		return NULL;
+	}
+
+	big_int_set_bytes(n, md, 64);
+	memcpy(&id->bigint, n, sizeof(big_int_t));
+	free(n);
+
+	return id;
+}
+
+c4_digest_t* c4id_encoder_digest(c4id_encoder_t* enc) {
+	if (enc == NULL) {
+		return NULL;
+	}
+
+	c4_digest_t* digest = malloc(sizeof(c4_digest_t));
+	if (digest == NULL) {
+		return NULL;
+	}
+
+	unsigned int md_len;
+
+	/* Create a copy of the context to avoid finalizing the original */
+	EVP_MD_CTX* ctx_copy = EVP_MD_CTX_create();
+	if (ctx_copy == NULL) {
+		free(digest);
+		return NULL;
+	}
+
+	EVP_MD_CTX_copy_ex(ctx_copy, enc->ctx);
+	EVP_DigestFinal_ex(ctx_copy, digest->data, &md_len);
+	EVP_MD_CTX_destroy(ctx_copy);
+
+	return digest;
+}
+
+void c4id_encoder_reset(c4id_encoder_t* enc) {
+	if (enc == NULL || enc->ctx == NULL) {
+		return;
+	}
+
+	EVP_MD_CTX_destroy(enc->ctx);
+	enc->ctx = EVP_MD_CTX_create();
+	if (enc->ctx != NULL) {
+		EVP_DigestInit_ex(enc->ctx, EVP_sha512(), NULL);
 	}
 }
 
-//  EncoderUpdate writes `size` bytes from `data` to the encoder `e`
-void c4id_encoder_update(c4id_encoder_t *e, unsigned char* data, int size) {
-	EVP_DigestUpdate(e->c, data, size);
+void c4id_encoder_free(c4id_encoder_t* enc) {
+	if (enc != NULL) {
+		if (enc->ctx != NULL) {
+			EVP_MD_CTX_destroy(enc->ctx);
+		}
+		free(enc);
+	}
 }
 
-// c4idEncodedID returns the c4_id_t for the bytes written to the encoder.
-c4_id_t* c4id_encoded_id(c4id_encoder_t *e)  {
-	byte* md = malloc(64);
-	// SHA512_Final(md, e->c);
-	EVP_DigestFinal_ex(e->c, md, NULL);
-	big_int_t *n = new_big_int(512);
-
-	big_int_set_bytes(n, md, 64);
-
-	return (c4_id_t*)n;
+/* Legacy function names for compatibility */
+c4id_encoder_t* c4id_new_encoder(void) {
+	return c4id_encoder_new();
 }
 
-// Digest get the Digest for the bytes written so far.
-// func (e *Encoder) Digest() Digest {
-// 	return NewDigest(e.h.Sum(nil));
-// }
+void c4id_encoder_update(c4id_encoder_t* enc, unsigned char* data, int size) {
+	c4id_encoder_write(enc, data, (size_t)size);
+}
 
-// Reset the encoder so it can identify a new block of data.
-// func (e *Encoder) Reset() {
-// 	e.h.Reset()
-// }
+c4_id_t* c4id_encoded_id(c4id_encoder_t* enc) {
+	return c4id_encoder_id(enc);
+}
+
+void c4id_release_encoder(c4id_encoder_t* enc) {
+	c4id_encoder_free(enc);
+}

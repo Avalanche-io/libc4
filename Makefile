@@ -1,8 +1,8 @@
 
 CC = clang
-CINCUDES = -I/usr/local/Cellar/openssl@1.1/1.1.1i/include
+# Use pkg-config if available, otherwise use system defaults
+CINCUDES = $(shell pkg-config --cflags openssl 2>/dev/null || echo "")
 CFLAGS = -c
-# -mmacosx-version-min=10.12
 
 all: lib/libc4.a
 

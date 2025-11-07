@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "c4.h"
-#include "big.h"
 
 #include "error.c"
 
@@ -11,8 +11,6 @@ const char *expected = "c43AQnB9bDGEwZSsxT1HwhHrCYXDoTrr4hmAJypFwxhTVngqUhVJwQtm
 
 int test_count = 3;
 error* (*tests[4]) ();
-// error* setup();
-// error* teardown();
 
 error* setup() {
 	// First we must initialize the c4 library
@@ -29,54 +27,67 @@ const char *idFFFF = "c467rpwLCuS5DGA8KGZXKsVQ7dnPb9goRLoKfgGbLfQg9WoLUgNY77E2jT
 
 error* TestAllFFFF() {
 	printf("TestAllFFFF\n");
+
+	// Create a digest from all 0xFF bytes
 	unsigned char b[64];
 	for (int i = 0; i < 64; i++) {
 		b[i] = 255;
 	}
-	big_int_t *bignum = new_big_int(0);
-	big_int_set_bytes(bignum, b, 64);
 
-	c4_id_t *id	= (c4_id_t *)bignum;
+	// Use digest API to convert bytes to ID
+	c4_digest_t *digest = c4id_digest_new(b, 64);
+	if (digest == NULL) {
+		return NewError("Failed to create digest\n");
+	}
+
+	c4_id_t *id = c4id_digest_to_id(digest);
+	if (id == NULL) {
+		c4id_digest_free(digest);
+		return NewError("Failed to convert digest to ID\n");
+	}
+
 	char *idstr = c4id_string(id);
+	if (idstr == NULL) {
+		c4id_free(id);
+		c4id_digest_free(digest);
+		return NewError("Failed to convert ID to string\n");
+	}
 
-	if (strcmp( idstr, idFFFF) != 0) {
+	if (strcmp(idstr, idFFFF) != 0) {
 		char *errstr = malloc(2048);
-		snprintf(errstr, 2048, "AllFFFF ids do not match\n");
-		snprintf(errstr, 2048, "%s\tgot:      \"%s\"\n", errstr, idstr);
-		snprintf(errstr, 2048, "%s\texpected: \"%s\"\n", errstr, idFFFF);
+		snprintf(errstr, 2048, "AllFFFF ids do not match\n\tgot:      \"%s\"\n\texpected: \"%s\"\n",
+			idstr, idFFFF);
+		free(idstr);
+		c4id_free(id);
+		c4id_digest_free(digest);
 		return NewError(errstr);
 	}
 
-	c4_id_t *id2 = c4id_parse("c467rpwLCuS5DGA8KGZXKsVQ7dnPb9goRLoKfgGbLfQg9WoLUgNY77E2jT11fem3coV9nAkguBACzrU1iyZM4B8roQ");
+	// Test parsing
+	c4_id_t *id2 = c4id_parse(idFFFF);
 	if (id2 == NULL) {
+		free(idstr);
+		c4id_free(id);
+		c4id_digest_free(digest);
+		return NewError("AllFFFF failed to parse c4 id string.\n");
+	}
+
+	// Compare the two IDs
+	int cmp = c4id_cmp(id, id2);
+	if (cmp != 0) {
 		char *errstr = malloc(2048);
-		snprintf(errstr, 2048, "AllFFFF failed to parse c4 id string.\n");
+		snprintf(errstr, 2048, "TestAllFFFF: parsed ID doesn't match created ID (cmp=%d)\n", cmp);
+		free(idstr);
+		c4id_free(id);
+		c4id_free(id2);
+		c4id_digest_free(digest);
 		return NewError(errstr);
 	}
 
-	big_int_t *bignum2 = new_big_int(0);
-	big_int_set(bignum2, id2);
-	// big_int_set(bignum2, id2);
-	// unsigned char b2[64];
-	// for ( int i = 0; i<64; i++ ) {
-	// 	b2[i] = 0;
-	// }
-	unsigned char b2[64];
-	// b2 = NULL;
-
-	int n = big_int_get_bytes(bignum2, b2, 64);
-	if (n == 0) {
-		char *errstr = malloc(2048);
-		snprintf(errstr, 2048, "TestAllFFFF c4id not parsed correctly\n");
-		return NewError(errstr);
-	}
-	for ( int i = 0; i<64; i++ ) {
-		if ( b2[i] != 0xFF ) {
-			char *errstr = malloc(2048);
-			snprintf(errstr, 2048, "TestAllFFFF c4id not parsed correctly\n");
-			return NewError(errstr);
-		}
-	}
+	free(idstr);
+	c4id_free(id);
+	c4id_free(id2);
+	c4id_digest_free(digest);
 	return NULL;
 }
 
@@ -84,52 +95,67 @@ const char *id0000 = "c411111111111111111111111111111111111111111111111111111111
 
 error* TestAll0000() {
 	printf("TestAll0000\n");
+
+	// Create a digest from all 0x00 bytes
 	unsigned char b[64];
 	for (int i = 0; i < 64; i++) {
 		b[i] = 0;
 	}
-	big_int_t *bignum = new_big_int(0);
-	big_int_set_bytes(bignum, b, 64);
 
-	c4_id_t *id	= (c4_id_t *)bignum;
+	// Use digest API to convert bytes to ID
+	c4_digest_t *digest = c4id_digest_new(b, 64);
+	if (digest == NULL) {
+		return NewError("Failed to create digest\n");
+	}
+
+	c4_id_t *id = c4id_digest_to_id(digest);
+	if (id == NULL) {
+		c4id_digest_free(digest);
+		return NewError("Failed to convert digest to ID\n");
+	}
+
 	char *idstr = c4id_string(id);
+	if (idstr == NULL) {
+		c4id_free(id);
+		c4id_digest_free(digest);
+		return NewError("Failed to convert ID to string\n");
+	}
 
-	if ( strcmp(idstr, id0000) != 0 ) {
+	if (strcmp(idstr, id0000) != 0) {
 		char *errstr = malloc(2048);
-		snprintf(errstr, 2048, "All0000 ids do not match\n");
-		snprintf(errstr, 2048, "%s\tgot:      \"%s\"\n", errstr, idstr);
-		snprintf(errstr, 2048, "%s\texpected: \"%s\"\n", errstr, id0000);
+		snprintf(errstr, 2048, "All0000 ids do not match\n\tgot:      \"%s\"\n\texpected: \"%s\"\n",
+			idstr, id0000);
+		free(idstr);
+		c4id_free(id);
+		c4id_digest_free(digest);
 		return NewError(errstr);
 	}
 
-	c4_id_t *id2 = c4id_parse("c41111111111111111111111111111111111111111111111111111111111111111111111111111111111111111");
+	// Test parsing
+	c4_id_t *id2 = c4id_parse(id0000);
 	if (id2 == NULL) {
+		free(idstr);
+		c4id_free(id);
+		c4id_digest_free(digest);
+		return NewError("All0000 failed to parse c4 id string.\n");
+	}
+
+	// Compare the two IDs
+	int cmp = c4id_cmp(id, id2);
+	if (cmp != 0) {
 		char *errstr = malloc(2048);
-		snprintf(errstr, 2048, "All0000 failed to parse c4 id string.\n");
+		snprintf(errstr, 2048, "TestAll0000: parsed ID doesn't match created ID (cmp=%d)\n", cmp);
+		free(idstr);
+		c4id_free(id);
+		c4id_free(id2);
+		c4id_digest_free(digest);
 		return NewError(errstr);
 	}
 
-	big_int_t *bignum2;
-	big_int_set(bignum2, id2);
-	unsigned char b2[64];
-	for ( int i = 0; i<64; i++ ) {
-		b2[i] = 0;
-	}
-	int n = big_int_get_bytes(bignum2, b2, 64);
-	if (n != 0) {
-		char *errstr = malloc(2048);
-		snprintf(errstr, 2048, "TestAll0000 c4id not parsed correctly\n");
-		return NewError(errstr);
-	}
-
-	for ( int i = 0; i<64; i++ ) {
-		if (b2[i] != 0) {
-			char *errstr = malloc(2048);
-			snprintf(errstr, 2048, "TestAll0000 c4id not parsed correctly\n");
-			return NewError(errstr);
-		}
-	}
-
+	free(idstr);
+	c4id_free(id);
+	c4id_free(id2);
+	c4id_digest_free(digest);
 	return NULL;
 }
 
@@ -151,164 +177,62 @@ error* TestAppendOrder() {
 	};
 
 	for (int k = 0; k < 4; k++) {
-		unsigned char * b = byteData[k];
-		big_int_t *bignum = new_big_int(0);
-		big_int_set_bytes(bignum, b, 64);
+		unsigned char *b = byteData[k];
 
-		c4_id_t *id	= (c4_id_t *)bignum;
+		// Use digest API to convert bytes to ID
+		c4_digest_t *digest = c4id_digest_new(b, 64);
+		if (digest == NULL) {
+			return NewError("Failed to create digest\n");
+		}
+
+		c4_id_t *id = c4id_digest_to_id(digest);
+		if (id == NULL) {
+			c4id_digest_free(digest);
+			return NewError("Failed to convert digest to ID\n");
+		}
+
 		char *idstr = c4id_string(id);
+		if (idstr == NULL) {
+			c4id_free(id);
+			c4id_digest_free(digest);
+			return NewError("Failed to convert ID to string\n");
+		}
 
-		if ( strcmp(idstr, expectedIDs[k]) != 0 ) {
+		if (strcmp(idstr, expectedIDs[k]) != 0) {
 			char *errstr = malloc(2048);
-			snprintf(errstr, 2048, "TestAppendOrder ids do not match\n");
-			snprintf(errstr, 2048, "%s\tgot:      \"%s\"\n", errstr, idstr);
-			snprintf(errstr, 2048, "%s\texpected: \"%s\"\n", errstr, expectedIDs[k]);
+			snprintf(errstr, 2048, "TestAppendOrder ids do not match (test %d)\n\tgot:      \"%s\"\n\texpected: \"%s\"\n",
+				k, idstr, expectedIDs[k]);
+			free(idstr);
+			c4id_free(id);
+			c4id_digest_free(digest);
 			return NewError(errstr);
 		}
 
 		c4_id_t *id2 = c4id_parse(expectedIDs[k]);
-	  if (id2 == NULL) {
-	  	char *errstr = malloc(2048);
-	  	snprintf(errstr, 2048, "TestAppendOrder failed to parse c4 id string.\n");
-	  	return NewError(errstr);
-	  }
+		if (id2 == NULL) {
+			free(idstr);
+			c4id_free(id);
+			c4id_digest_free(digest);
+			return NewError("TestAppendOrder failed to parse c4 id string.\n");
+		}
 
-// 		bignum2 := big.Int(*id2)
-// 		b = (&bignum2).Bytes()
-// 		size := len(b)
-// 		for size < 64 {
-// 			b = append([]byte{0}, b...)
-// 			size++
-// 		}
-// 		for i, bb := range b {
-// 			is.Equal(bb, byteData[k][i])
-// 		}
+		// Compare IDs
+		int cmp = c4id_cmp(id, id2);
+		if (cmp != 0) {
+			char *errstr = malloc(2048);
+			snprintf(errstr, 2048, "TestAppendOrder: parsed ID doesn't match created ID (test %d, cmp=%d)\n", k, cmp);
+			free(idstr);
+			c4id_free(id);
+			c4id_free(id2);
+			c4id_digest_free(digest);
+			return NewError(errstr);
+		}
+
+		free(idstr);
+		c4id_free(id);
+		c4id_free(id2);
+		c4id_digest_free(digest);
 	}
+
 	return NULL;
 }
-
-// func TestParseBytesID(t *testing.T) {
-// 	is := is.New(t)
-
-// 	for _, test := range []struct {
-// 		In  string
-// 		Err string
-// 		Exp string
-// 	}{
-// 		{
-// 			In:  `c43ucjRutKqZSCrW43QGU1uwRZTGoVD7A7kPHKQ1z4X1Ge8mhW4Q1gk48Ld8VFpprQBfUC8JNvHYVgq453hCFrgf9D`,
-// 			Err: ``,
-// 			Exp: "This is a pretend asset file, for testing asset id generation.\n",
-// 		},
-// 		{
-// 			In:  `c430cjRutKqZSCrW43QGU1uwRZTGoVD7A7kPHKQ1z4X1Ge8mhW4Q1gk48Ld8VFpprQBfUC8JNvHYVgq453hCFrgf9D`,
-// 			Err: `non c4 id character at position 3`,
-// 			Exp: "",
-// 		},
-// 		{
-// 			In:  ``,
-// 			Err: `c4 ids must be 90 characters long, input length 0`,
-// 			Exp: "",
-// 		},
-// 		{
-// 			In:  `c430cjRutKqZSCrW43QGU1uwRZTGoVD7A7kPHKQ1z4X1Ge8mhW4Q1gk48Ld8VFpprQBfUC8JNvHYVgq453hCFrgf9`,
-// 			Err: `c4 ids must be 90 characters long, input length 89`,
-// 			Exp: "",
-// 		},
-// 	} {
-// 		id, err := c4.Parse(test.In)
-// 		if len(test.Err) != 0 {
-// 			is.Err(err)
-// 			is.Equal(err->Error(), test.Err)
-// 		} else {
-// 			expectedID := c4.Identify(strings.NewReader(test.Exp))
-// 			is.NoErr(err)
-// 			is.Equal(expectedID.Cmp(id), 0)
-// 		}
-// 	}
-// }
-
-// func TestIDLess(t *testing.T) {
-// 	is := is.New(t)
-// 	id1 := encode(strings.NewReader(`1`)) // c42yrSHMvUcscrQBssLhrRE28YpGUv9Gf95uH8KnwTiBv4odDbVqNnCYFs3xpsLrgVZfHebSaQQsvxgDGmw5CX1fVy
-// 	id2 := encode(strings.NewReader(`2`)) // c42i2hTBA9Ej4nqEo9iUy3pJRRE53KAH9RwwMSWjmfaQN7LxCymVz1zL9hEjqeFYzxtxXz2wRK7CBtt71AFkRfHodu
-
-// 	is.Equal(id1.Less(id2), false)
-// }
-
-// func TestIDCmp(t *testing.T) {
-// 	is := is.New(t)
-// 	id1 := encode(strings.NewReader(`1`)) // c42yrSHMvUcscrQBssLhrRE28YpGUv9Gf95uH8KnwTiBv4odDbVqNnCYFs3xpsLrgVZfHebSaQQsvxgDGmw5CX1fVy
-// 	id2 := encode(strings.NewReader(`2`)) // c42i2hTBA9Ej4nqEo9iUy3pJRRE53KAH9RwwMSWjmfaQN7LxCymVz1zL9hEjqeFYzxtxXz2wRK7CBtt71AFkRfHodu
-
-// 	is.Equal(id1.Cmp(id2), 1)
-// 	is.Equal(id2.Cmp(id1), -1)
-// 	is.Equal(id1.Cmp(id1), 0)
-
-// }
-
-// func TestCompareIDs(t *testing.T) {
-// 	is := is.New(t)
-
-// 	for _, test := range []struct {
-// 		Id_A *c4.ID
-// 		Id_B *c4.ID
-// 		Exp  int
-// 	}{
-// 		{
-
-// 			Id_A: encode(strings.NewReader("Test string")),
-// 			Id_B: encode(strings.NewReader("Test string")),
-// 			Exp:  0,
-// 		},
-// 		{
-// 			Id_A: encode(strings.NewReader("Test string A")),
-// 			Id_B: encode(strings.NewReader("Test string B")),
-// 			Exp:  -1,
-// 		},
-// 		{
-// 			Id_A: encode(strings.NewReader("Test string B")),
-// 			Id_B: encode(strings.NewReader("Test string A")),
-// 			Exp:  1,
-// 		},
-// 		{
-// 			Id_A: encode(strings.NewReader("Test string")),
-// 			Id_B: nil,
-// 			Exp:  -1,
-// 		},
-// 	} {
-// 		is.Equal(test.Id_A.Cmp(test.Id_B), test.Exp)
-// 	}
-
-// }
-
-// func TestBytesToID(t *testing.T) {
-// 	is := is.New(t)
-
-// 	d := c4.Digest([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58})
-// 	id := d.ID()
-// 	is.Equal(id.String(), "c41111111111111111111111111111111111111111111111111111111111111111111111111111111111111121")
-// }
-
-// // func TestSum(t *testing.T) {
-// // 	is := is.New(t)
-
-// // 	id1 := c4.Identify(strings.NewReader("foo"))
-// // 	id2 := c4.Identify(strings.NewReader("bar"))
-
-// // 	is.True(id2.Less(id1))
-
-// // 	bts := append(id2.Digest(), id1.Digest()...)
-// // 	expectedSum := c4.Identify(bts)
-
-// // 	testSum := id1.Digest().Sum(id2.Digest())
-// // 	is.Equal(expectedSum, testSum)
-// // }
-
-// func TestNILID(t *testing.T) {
-// 	is := is.New(t)
-
-// 	// ID of nothing constant
-// 	nilid := c4.NIL_ID
-// 	is.Equal(nilid.String(), "c459dsjfscH38cYeXXYogktxf4Cd9ibshE3BHUo6a58hBXmRQdZrAkZzsWcbWtDg5oQstpDuni4Hirj75GEmTc1sFT")
-// }

@@ -4,7 +4,7 @@
  *
 */
 
-#ifndef __BIG_H__
+#ifndef BIG_H
 
 #include <stdlib.h>
 #include <gmp.h>
@@ -25,9 +25,9 @@ void big_int_add(big_int_t *q, big_int_t *n, int d);
 int big_int_div_mod(big_int_t *q, big_int_t *n, int d);
 
 void big_int_set_bytes(big_int_t *n, unsigned char *data, int size );
-int big_int_get_bytes(big_int_t *n, unsigned char *data, int size );
+int big_int_get_bytes(big_int_t *n, void *data, int size );
 
 int big_int_cmp(big_int_t *a, big_int_t *b);
 
-#define __BIG_H__
-#endif
+#define BIG_H
+#endif /* BIG_H */
