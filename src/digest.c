@@ -1,78 +1,131 @@
+#include "../include/c4.h"
+#include "c4_internal.h"
+#include <gmp.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <openssl/evp.h>
-
-// Digest represents a 64 byte "C4 Digest", which is the SHA-512 hash. Amongst
-// other things Digest enforces padding to insure alignment with the original
-// 64 byte hash.
-//
-// A digest is simply an array of 64 bytes and can be use wherever the raw SHA
-// hash might be needed.
-typedef byte* c4_digest_t;
-
-// NewDigest creates a Digest and initializes it with the argument, enforcing
-// byte alignment by padding with 0 (zero) if needed. NewDigest will return nil
-// if the argument is larger then 64 bytes. For performance NewDigest may
-// not copy the data to a new slice, so copies must be made explicitly when
-// needed.
-c4_digest_t c4id_new_digest(unsigned char *b, int length) {
-	c4_digest_t d = malloc(64);
-	int offset = length-64;
-
-	for (int i = 0;i<64;i++) {
-		d[i] = 0;
-		if (offset >= 0) {
-			d[i] = b[offset];
-		}
-		offset++;
+c4_digest_t* c4id_digest_new(const void* b, size_t length) {
+	if (b == NULL || length > 64) {
+		return NULL;
 	}
-	return d;
+
+	c4_digest_t* digest = malloc(sizeof(c4_digest_t));
+	if (digest == NULL) {
+		return NULL;
+	}
+
+	/* Initialize with zeros */
+	memset(digest->data, 0, 64);
+
+	/* Copy data to the end of the buffer (right-aligned) */
+	if (length > 0) {
+		memcpy(digest->data + (64 - length), b, length);
+	}
+
+	return digest;
 }
 
-int compare(c4_digest_t l, c4_digest_t r) {
-	for (int i = 0; i<64; i++) {
-		if (l[i] > r[i]) {
+static int compare(const c4_digest_t* left, const c4_digest_t* right) {
+	for (int i = 0; i < 64; i++) {
+		if (left->data[i] > right->data[i]) {
 			return 1;
-		} else if (l[i] < r[i]) {
+		} else if (left->data[i] < right->data[i]) {
 			return -1;
 		}
 	}
 	return 0;
 }
 
-// Sum returns the digest of the receiver and argument combined. Insuring
-// proper order. C4 Digests of C4 Digests are always identified by concatenating
-// the bytes of the larger digest after the bytes of the lesser digest to form a
-// block of 128 bytes which are then IDed.
-c4_digest_t c4id_digest_sum(c4_digest_t l, c4_digest_t r) {
-	c4_digest_t tmp;
-	switch( compare(l, r) ) {
-		case -1 :
-			// If the left side is larger then they are already in order, do nothing
-			break;
-		case 1 : // If the right side is larger swap them
-			tmp = l;
-			l = r;
-			r = tmp;
-			break;
-		case 0 : // If they are identical no sum is needed, so just return one.
-			return l;
-			break;
+c4_digest_t* c4id_digest_sum(const c4_digest_t* left, const c4_digest_t* right) {
+	if (left == NULL || right == NULL) {
+		return NULL;
 	}
 
-	EVP_MD_CTX *c = EVP_MD_CTX_create();
-	EVP_DigestInit_ex(c, EVP_sha512(), NULL);
-	EVP_DigestUpdate(c, l, 64);
-	EVP_DigestUpdate(c, r, 64);
+	const c4_digest_t* l = left;
+	const c4_digest_t* r = right;
 
-	unsigned char *md = malloc(64);
-	EVP_DigestFinal_ex(c, md, NULL);
-	return c4id_new_digest(md, 64);
+	int cmp = compare(l, r);
+
+	/* If identical, return a copy of left */
+	if (cmp == 0) {
+		c4_digest_t* result = malloc(sizeof(c4_digest_t));
+		if (result == NULL) {
+			return NULL;
+		}
+		memcpy(result->data, l->data, 64);
+		return result;
+	}
+
+	/* Swap if left > right to ensure smaller comes first */
+	if (cmp > 0) {
+		const c4_digest_t* tmp = l;
+		l = r;
+		r = tmp;
+	}
+
+	/* Hash the concatenation of the two digests */
+	EVP_MD_CTX* ctx = EVP_MD_CTX_create();
+	if (ctx == NULL) {
+		return NULL;
+	}
+
+	EVP_DigestInit_ex(ctx, EVP_sha512(), NULL);
+	EVP_DigestUpdate(ctx, l->data, 64);
+	EVP_DigestUpdate(ctx, r->data, 64);
+
+	byte md[64];
+	unsigned int md_len;
+	EVP_DigestFinal_ex(ctx, md, &md_len);
+	EVP_MD_CTX_destroy(ctx);
+
+	c4_digest_t* result = c4id_digest_new(md, 64);
+	return result;
 }
 
-// ID returns the C4 ID representation of the digest by directly translating the byte
-// slice to the standard C4 ID format (the bytes are not (re)hashed).
-c4_id_t* c4id_digest_id(c4_digest_t d) {
-	big_int_t *id = new_big_int(512);
-	big_int_set_bytes(id, d, 64);
-	return (c4_id_t*) id;
+c4_id_t* c4id_digest_to_id(const c4_digest_t* digest) {
+	if (digest == NULL) {
+		return NULL;
+	}
+
+	c4_id_t* id = malloc(sizeof(c4_id_t));
+	if (id == NULL) {
+		return NULL;
+	}
+
+	big_int_t* n = new_big_int(512);
+	if (n == NULL) {
+		free(id);
+		return NULL;
+	}
+
+	big_int_set_bytes(n, (unsigned char*)digest->data, 64);
+	memcpy(&id->bigint, n, sizeof(big_int_t));
+	free(n);
+
+	return id;
+}
+
+int c4id_digest_cmp(const c4_digest_t* a, const c4_digest_t* b) {
+	if (a == NULL && b == NULL) {
+		return 0;
+	}
+	if (a == NULL) {
+		return -1;
+	}
+	if (b == NULL) {
+		return 1;
+	}
+
+	return compare(a, b);
+}
+
+void c4id_digest_free(c4_digest_t* digest) {
+	if (digest != NULL) {
+		free(digest);
+	}
+}
+
+/* Legacy function name for compatibility */
+c4_id_t* c4id_digest_id(c4_digest_t* digest) {
+	return c4id_digest_to_id(digest);
 }
