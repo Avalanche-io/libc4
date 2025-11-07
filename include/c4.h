@@ -28,8 +28,29 @@ typedef enum {
     C4_ERROR_NULL_POINTER
 } c4_error_t;
 
+/* Extended error information with context */
+typedef struct {
+    c4_error_t code;              /* Error code */
+    const char* message;          /* Human-readable message */
+    const char* function;         /* Function where error occurred */
+    int position;                 /* Position in input where error occurred (-1 if N/A) */
+    char detail[256];             /* Additional error details */
+} c4_error_info_t;
+
+/* Error callback function type */
+typedef void (*c4_error_callback_t)(const c4_error_info_t* error, void* user_data);
+
 /* Get human-readable error message */
 const char* c4_error_string(c4_error_t err);
+
+/* Get detailed information about the last error that occurred */
+const c4_error_info_t* c4_get_last_error(void);
+
+/* Clear the last error */
+void c4_clear_error(void);
+
+/* Set custom error callback for error reporting */
+void c4_set_error_callback(c4_error_callback_t callback, void* user_data);
 
 /* Library initialization - must be called before using any other functions */
 void c4_init(void);
