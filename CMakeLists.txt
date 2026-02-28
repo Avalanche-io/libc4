@@ -28,6 +28,7 @@ add_library(c4
     src/c4m/encoder.cpp
     src/c4m/manifest.cpp
     src/c4m/entry.cpp
+    src/c4m/naturalsort.cpp
     src/c4m/sequence.cpp
     src/c4m/operations.cpp
 )
