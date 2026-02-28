@@ -1,0 +1,6 @@
+libc4 - C4 ID System Reference Implementation
+Copyright 2026 Joshua Ian Kolden
+
+This product implements the C4 ID system as specified in SMPTE ST 2114:2017.
+
+"C4" and the C4 logo are trademarks of Joshua Ian Kolden.
