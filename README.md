@@ -85,6 +85,10 @@ c4_id_free(id);
 
 This implementation produces identical output to the [Go reference implementation](https://github.com/Avalanche-io/c4). Test vectors are shared to ensure all implementations agree on ID computation.
 
+## Design Decisions
+
+See the [FAQ](https://github.com/Avalanche-io/c4/blob/main/docs/faq.md) for design decisions including SHA-512 permanence, the c4m format, and content store scaling.
+
 ## License
 
 Apache 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
