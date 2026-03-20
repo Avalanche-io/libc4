@@ -10,6 +10,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Link-time optimization (LTO) for cross-TU inlining and dead-code elimination
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported)
+if(ipo_supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
+
 # Ensure consistent ABI across all targets
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
@@ -31,6 +38,7 @@ add_library(c4
     src/c4m/naturalsort.cpp
     src/c4m/sequence.cpp
     src/c4m/operations.cpp
+    src/c4m/safename.cpp
 )
 
 target_include_directories(c4

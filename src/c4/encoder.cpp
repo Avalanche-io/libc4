@@ -6,6 +6,10 @@
 //
 // Unlike Bitcoin's base58check, C4 uses fixed-width encoding: always 88
 // base58 chars for 64 bytes. No leading-zero/leading-'1' convention.
+//
+// This implementation uses 64-bit limb arithmetic for performance: instead
+// of processing one base58 digit at a time, we pack up to 9 base58 digits
+// per 64-bit limb (58^9 < 2^63), reducing the inner loop iterations ~9x.
 
 #include "c4/c4.hpp"
 #include "c4/c4.h"
@@ -15,7 +19,6 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace {
 
@@ -33,66 +36,149 @@ constexpr std::array<uint8_t, 128> b58Reverse = []() {
     return table;
 }();
 
-// Encode raw bytes to base58 string (pure big-integer conversion, no
-// leading-zero convention). Caller pads to desired width.
+// Digits per limb for encoding (base58 -> bytes direction).
+// 58^9 = 7,427,658,739,644,928. Max intermediate: (58^9-1)*256 + 255 < 2^64. Safe.
+constexpr int kDigitsPerLimb = 9;
+constexpr uint64_t POW58 = 7427658739644928ULL; // 58^9
+
+// For a 64-byte (512-bit) input, we need at most 88 base58 digits.
+// 88 / 9 = 10 limbs (ceil).
+constexpr int kMaxLimbs = 10;
+
+// Encode raw bytes to base58 string using 64-bit limb arithmetic.
+// Each limb holds a value in [0, 58^9), representing 9 base58 digits.
 std::string base58Encode(const uint8_t *data, size_t len) {
-    std::vector<uint8_t> digits;
-    digits.reserve(len * 138 / 100 + 1); // log(256) / log(58)
+    uint64_t limbs[kMaxLimbs] = {};
+    int nlimbs = 0;
 
     for (size_t i = 0; i < len; i++) {
-        uint32_t carry = data[i];
-        for (auto &d : digits) {
-            carry += static_cast<uint32_t>(d) << 8;
-            d = static_cast<uint8_t>(carry % 58);
-            carry /= 58;
+        uint64_t carry = data[i];
+        for (int j = 0; j < nlimbs; j++) {
+            uint64_t acc = limbs[j] * 256 + carry;
+            limbs[j] = acc % POW58;
+            carry = acc / POW58;
         }
         while (carry > 0) {
-            digits.push_back(static_cast<uint8_t>(carry % 58));
-            carry /= 58;
+            limbs[nlimbs++] = carry % POW58;
+            carry /= POW58;
         }
     }
 
-    std::string result;
-    result.reserve(digits.size());
-    for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
-        result += b58Alphabet[*it];
+    // Extract base58 digits from limbs (most-significant limb first).
+    // Each limb except the most-significant produces exactly kDigitsPerLimb digits.
+    // The most-significant limb produces only as many digits as needed.
+    char result[90];
+    int pos = 0;
+
+    if (nlimbs == 0) {
+        return "";
     }
-    return result;
+
+    // Most-significant limb: variable number of digits
+    {
+        char buf[kDigitsPerLimb];
+        int n = 0;
+        uint64_t v = limbs[nlimbs - 1];
+        do {
+            buf[n++] = b58Alphabet[v % 58];
+            v /= 58;
+        } while (v > 0);
+        for (int k = n - 1; k >= 0; k--) {
+            result[pos++] = buf[k];
+        }
+    }
+
+    // Remaining limbs: each produces exactly kDigitsPerLimb digits
+    for (int i = nlimbs - 2; i >= 0; i--) {
+        char buf[kDigitsPerLimb];
+        uint64_t v = limbs[i];
+        for (int d = 0; d < kDigitsPerLimb; d++) {
+            buf[d] = b58Alphabet[v % 58];
+            v /= 58;
+        }
+        for (int k = kDigitsPerLimb - 1; k >= 0; k--) {
+            result[pos++] = buf[k];
+        }
+    }
+
+    return std::string(result, pos);
 }
 
-// Decode base58 string to raw bytes (pure big-integer conversion, no
-// leading-'1' convention). Output is zero-padded to outlen.
+// Decode: limbs in base 256^8 = 18,446,744,073,709,551,616 would overflow,
+// so we use 256^7 = 72,057,594,037,927,936. Max intermediate:
+// (256^7 - 1) * 58 + 57 < 2^64. Safe.
+constexpr int kBytesPerLimb = 7;
+constexpr uint64_t POW256 = 72057594037927936ULL; // 256^7
+constexpr int kDecodeMaxLimbs = 10; // ceil(64/7) = 10
+
 bool base58Decode(const char *str, size_t slen, uint8_t *out, size_t outlen) {
-    std::vector<uint8_t> bytes;
-    bytes.reserve(slen * 733 / 1000 + 1);
+    uint64_t limbs[kDecodeMaxLimbs] = {};
+    int nlimbs = 0;
 
     for (size_t i = 0; i < slen; i++) {
         auto c = static_cast<unsigned char>(str[i]);
         if (c >= 128 || b58Reverse[c] == 255) {
             return false;
         }
-        uint32_t carry = b58Reverse[c];
-        for (auto &b : bytes) {
-            carry += static_cast<uint32_t>(b) * 58;
-            b = static_cast<uint8_t>(carry & 0xff);
-            carry >>= 8;
+        uint64_t carry = b58Reverse[c];
+        for (int j = 0; j < nlimbs; j++) {
+            uint64_t acc = limbs[j] * 58 + carry;
+            limbs[j] = acc % POW256;
+            carry = acc / POW256;
         }
         while (carry > 0) {
-            bytes.push_back(static_cast<uint8_t>(carry & 0xff));
-            carry >>= 8;
+            if (nlimbs >= kDecodeMaxLimbs) {
+                return false;
+            }
+            limbs[nlimbs++] = carry % POW256;
+            carry /= POW256;
         }
     }
 
-    if (bytes.size() > outlen) {
+    // Extract bytes from limbs into a temp buffer.
+    uint8_t temp[kDecodeMaxLimbs * kBytesPerLimb];
+    int tpos = 0;
+
+    if (nlimbs == 0) {
+        std::memset(out, 0, outlen);
+        return true;
+    }
+
+    // Most-significant limb: variable number of bytes
+    {
+        uint8_t buf[kBytesPerLimb];
+        int n = 0;
+        uint64_t v = limbs[nlimbs - 1];
+        do {
+            buf[n++] = static_cast<uint8_t>(v & 0xff);
+            v >>= 8;
+        } while (v > 0);
+        for (int k = n - 1; k >= 0; k--) {
+            temp[tpos++] = buf[k];
+        }
+    }
+
+    // Remaining limbs: each produces exactly kBytesPerLimb bytes
+    for (int i = nlimbs - 2; i >= 0; i--) {
+        uint8_t buf[kBytesPerLimb];
+        uint64_t v = limbs[i];
+        for (int d = 0; d < kBytesPerLimb; d++) {
+            buf[d] = static_cast<uint8_t>(v & 0xff);
+            v >>= 8;
+        }
+        for (int k = kBytesPerLimb - 1; k >= 0; k--) {
+            temp[tpos++] = buf[k];
+        }
+    }
+
+    if (static_cast<size_t>(tpos) > outlen) {
         return false;
     }
 
-    // Reverse into output, zero-pad front
-    size_t pad = outlen - bytes.size();
+    // Zero-pad front, copy into output
+    size_t pad = outlen - static_cast<size_t>(tpos);
     std::memset(out, 0, pad);
-    for (size_t i = 0; i < bytes.size(); i++) {
-        out[pad + i] = bytes[bytes.size() - 1 - i];
-    }
+    std::memcpy(out + pad, temp, tpos);
     return true;
 }
 

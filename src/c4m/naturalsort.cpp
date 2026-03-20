@@ -1,108 +1,81 @@
 // SPDX-License-Identifier: Apache-2.0
 // Natural sort comparison for c4m entry ordering.
 // Numeric segments are compared as integers: "file2" < "file10"
+//
+// This implementation walks both strings simultaneously without allocating
+// any heap memory — no vectors, no substrings.
 
 #include "c4/c4m.hpp"
 
 #include <cstdint>
-#include <string>
-
-namespace {
-
-struct Segment {
-    std::string text;
-    bool is_numeric = false;
-    int64_t num_value = 0;
-};
-
-std::vector<Segment> segmentString(const std::string &s) {
-    if (s.empty())
-        return {};
-
-    std::vector<Segment> segments;
-    std::string current;
-    bool is_numeric = false;
-    bool first = true;
-
-    for (char c : s) {
-        bool is_digit = (c >= '0' && c <= '9');
-
-        if (first) {
-            first = false;
-            is_numeric = is_digit;
-            current += c;
-            continue;
-        }
-
-        if (is_digit != is_numeric) {
-            // Transition: save current segment
-            Segment seg;
-            seg.text = current;
-            seg.is_numeric = is_numeric;
-            if (is_numeric) {
-                seg.num_value = 0;
-                for (char d : current)
-                    seg.num_value = seg.num_value * 10 + (d - '0');
-            }
-            segments.push_back(std::move(seg));
-
-            current.clear();
-            current += c;
-            is_numeric = is_digit;
-        } else {
-            current += c;
-        }
-    }
-
-    // Final segment
-    if (!current.empty()) {
-        Segment seg;
-        seg.text = current;
-        seg.is_numeric = is_numeric;
-        if (is_numeric) {
-            seg.num_value = 0;
-            for (char d : current)
-                seg.num_value = seg.num_value * 10 + (d - '0');
-        }
-        segments.push_back(std::move(seg));
-    }
-
-    return segments;
-}
-
-} // anonymous namespace
 
 namespace c4m {
 
 bool NaturalLess(const std::string &a, const std::string &b) {
-    auto segs_a = segmentString(a);
-    auto segs_b = segmentString(b);
+    size_t ai = 0, bi = 0;
+    size_t alen = a.size(), blen = b.size();
 
-    size_t min_len = std::min(segs_a.size(), segs_b.size());
+    while (ai < alen && bi < blen) {
+        bool a_digit = (a[ai] >= '0' && a[ai] <= '9');
+        bool b_digit = (b[bi] >= '0' && b[bi] <= '9');
 
-    for (size_t i = 0; i < min_len; i++) {
-        const auto &sa = segs_a[i];
-        const auto &sb = segs_b[i];
+        if (a_digit && b_digit) {
+            // Both are numeric segments: compare as integers.
+            // First, find the extent of each numeric run.
+            size_t a_start = ai, b_start = bi;
+            while (ai < alen && a[ai] >= '0' && a[ai] <= '9') ai++;
+            while (bi < blen && b[bi] >= '0' && b[bi] <= '9') bi++;
+            size_t a_len = ai - a_start;
+            size_t b_len = bi - b_start;
 
-        if (sa.is_numeric && sb.is_numeric) {
-            // Both numeric: compare as integers
-            if (sa.num_value != sb.num_value)
-                return sa.num_value < sb.num_value;
-            // Equal values: shorter representation first
-            if (sa.text.size() != sb.text.size())
-                return sa.text.size() < sb.text.size();
-        } else if (sa.is_numeric != sb.is_numeric) {
-            // Mixed: text sorts before numeric
-            return !sa.is_numeric;
-        } else {
-            // Both text: lexicographic
-            if (sa.text != sb.text)
-                return sa.text < sb.text;
+            // Compare numeric values. For values that fit in int64, compare
+            // directly. For longer runs, compare by length first (more digits
+            // = larger number, since we don't have leading zeros in normal use,
+            // but we handle them properly anyway).
+
+            // Skip leading zeros for value comparison.
+            size_t a_nz = a_start, b_nz = b_start;
+            while (a_nz < ai && a[a_nz] == '0') a_nz++;
+            while (b_nz < bi && b[b_nz] == '0') b_nz++;
+            size_t a_siglen = ai - a_nz;
+            size_t b_siglen = bi - b_nz;
+
+            // Different number of significant digits = different value
+            if (a_siglen != b_siglen) {
+                return a_siglen < b_siglen;
+            }
+
+            // Same number of significant digits: compare digit by digit
+            for (size_t k = 0; k < a_siglen; k++) {
+                if (a[a_nz + k] != b[b_nz + k]) {
+                    return a[a_nz + k] < b[b_nz + k];
+                }
+            }
+
+            // Equal numeric value: shorter representation first (fewer leading zeros)
+            if (a_len != b_len) {
+                return a_len < b_len;
+            }
+
+            // Completely equal segment, continue to next
+            continue;
         }
+
+        if (a_digit != b_digit) {
+            // Mixed: text sorts before numeric
+            return !a_digit;
+        }
+
+        // Both are text characters: compare lexicographically
+        if (a[ai] != b[bi]) {
+            return a[ai] < b[bi];
+        }
+        ai++;
+        bi++;
     }
 
-    // All compared segments equal: shorter string first
-    return segs_a.size() < segs_b.size();
+    // All compared characters equal: shorter string first
+    return alen < blen;
 }
 
 } // namespace c4m

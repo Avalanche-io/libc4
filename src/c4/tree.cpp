@@ -5,6 +5,9 @@
 // then paired bottom-up. Each pair is combined using Sum() (SHA-512 of
 // smaller||larger). Odd elements pass through to the next level. This
 // matches the Go reference implementation.
+//
+// This implementation reuses two pre-allocated vectors, swapping between
+// them at each level to avoid per-level allocation.
 
 #include "c4/c4.hpp"
 #include "internal.h"
@@ -30,19 +33,20 @@ c4::ID IDs::TreeID() const {
     }
 
     // Sort a copy and remove duplicates
-    auto sorted = ids_;
-    std::sort(sorted.begin(), sorted.end());
-    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+    auto current = ids_;
+    std::sort(current.begin(), current.end());
+    current.erase(std::unique(current.begin(), current.end()), current.end());
 
-    if (sorted.size() == 1) {
-        return sorted[0];
+    if (current.size() == 1) {
+        return current[0];
     }
 
-    // Build merkle tree bottom-up
-    std::vector<c4::ID> current = std::move(sorted);
+    // Build merkle tree bottom-up using two vectors, swapping roles each level
+    std::vector<c4::ID> next;
+    next.reserve((current.size() + 1) / 2);
+
     while (current.size() > 1) {
-        std::vector<c4::ID> next;
-        next.reserve((current.size() + 1) / 2);
+        next.clear();
 
         size_t i = 0;
         for (; i + 1 < current.size(); i += 2) {
@@ -53,7 +57,7 @@ c4::ID IDs::TreeID() const {
             next.push_back(current[i]);
         }
 
-        current = std::move(next);
+        std::swap(current, next);
     }
 
     return current[0];
