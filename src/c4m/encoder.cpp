@@ -4,6 +4,7 @@
 
 #include "c4/c4m.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -12,27 +13,16 @@
 namespace c4m {
 
 std::string Manifest::Encode() const {
-    // Make a mutable copy for sorting
-    Manifest copy = *this;
+    // Hierarchical sort: Copy + SortEntries preserves depth-first tree structure.
+    Manifest copy = Copy();
     copy.SortEntries();
 
     std::string out;
     out.reserve(4096);
 
-    // Header
-    out += "@c4m ";
-    out += copy.version_;
-    out += '\n';
-
-    // @base directive
-    if (!copy.base_.IsNil()) {
-        out += "@base ";
-        out += copy.base_.String();
-        out += '\n';
-    }
-
-    // Entries (canonical form with indentation)
-    for (const auto &entry : copy.entries_) {
+    // Entry-only output (no @c4m header, no @base directive).
+    // This matches the Go reference encoder which produces entries only.
+    for (const auto &entry : copy.Entries()) {
         out += entry.Format(2);
         out += '\n';
     }

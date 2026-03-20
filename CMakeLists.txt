@@ -10,12 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Link-time optimization (LTO) for cross-TU inlining and dead-code elimination
-include(CheckIPOSupported)
-check_ipo_supported(RESULT ipo_supported)
-if(ipo_supported)
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-endif()
+# LTO applied per-target below (not globally — breaks FetchContent deps like Catch2)
 
 # Ensure consistent ABI across all targets
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -71,6 +66,13 @@ set_target_properties(c4 PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
 )
+
+# Apply LTO to libc4 only (not fetched dependencies like Catch2)
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
+if(ipo_supported)
+    set_target_properties(c4 PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
 
 # Tests
 if(C4_BUILD_TESTS)

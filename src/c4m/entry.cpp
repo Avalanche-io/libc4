@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// C4M entry: mode/timestamp formatting, canonical form
+// C4M entry: mode/timestamp formatting, canonical form.
+// Matches Go reference: github.com/Avalanche-io/c4/c4m/entry.go
 
 #include "c4/c4m.hpp"
 
@@ -8,6 +9,44 @@
 #include <ctime>
 #include <stdexcept>
 #include <string>
+
+namespace {
+
+// Format name for c4m output using backslash escaping (no quoting).
+// Applies SafeName encoding then c4m field-boundary escaping.
+// Directory names: escape the base then re-append the trailing /.
+std::string formatName(const std::string &name, bool is_sequence) {
+    std::string safe = c4m::SafeName(name);
+
+    if (!name.empty() && name.back() == '/') {
+        std::string base = safe.substr(0, safe.size() - 1);
+        return c4m::EscapeField(base, false) + "/";
+    }
+
+    return c4m::EscapeField(safe, is_sequence);
+}
+
+// Format symlink target for c4m output.
+// Targets don't get bracket escaping since brackets in paths are literal.
+std::string formatTarget(const std::string &t) {
+    std::string safe = c4m::SafeName(t);
+    bool needs = false;
+    for (char c : safe) {
+        if (c == ' ' || c == '"') { needs = true; break; }
+    }
+    if (!needs) return safe;
+
+    std::string out;
+    out.reserve(safe.size() + 4);
+    for (char c : safe) {
+        if (c == ' ') out += "\\ ";
+        else if (c == '"') out += "\\\"";
+        else out += c;
+    }
+    return out;
+}
+
+} // anonymous namespace
 
 namespace c4m {
 
@@ -20,81 +59,27 @@ bool Entry::IsSymlink() const {
     return (mode & ModeSymlink) != 0;
 }
 
-// Format name: quote if it contains spaces, quotes, backslashes, or newlines.
-// Directory names (trailing /) are never quoted — the slash is an unambiguous boundary.
-static std::string formatName(const std::string &name) {
-    if (!name.empty() && name.back() == '/') {
-        // Directories: escape backslashes and newlines but don't quote
-        std::string out;
-        out.reserve(name.size());
-        for (char c : name) {
-            if (c == '\\') out += "\\\\";
-            else if (c == '\n') out += "\\n";
-            else out += c;
-        }
-        return out;
-    }
-
-    bool needs_quotes = false;
-    for (char c : name) {
-        if (c == ' ' || c == '"' || c == '\\' || c == '\n') {
-            needs_quotes = true;
-            break;
-        }
-    }
-    // Leading/trailing whitespace
-    if (!name.empty() && (name.front() == ' ' || name.back() == ' '))
-        needs_quotes = true;
-
-    if (!needs_quotes)
-        return name;
-
-    std::string out;
-    out.reserve(name.size() + 4);
-    out += '"';
-    for (char c : name) {
-        if (c == '\\') out += "\\\\";
-        else if (c == '"') out += "\\\"";
-        else if (c == '\n') out += "\\n";
-        else out += c;
-    }
-    out += '"';
-    return out;
+bool Entry::HasNullValues() const {
+    bool null_mode = (mode == 0 && !IsDir() && !IsSymlink());
+    bool null_ts = (timestamp == NullTimestamp);
+    bool null_sz = (size < 0);
+    return null_mode || null_ts || null_sz;
 }
 
-static std::string formatTarget(const std::string &t) {
-    bool needs_quotes = false;
-    for (char c : t) {
-        if (c == ' ' || c == '"' || c == '\\' || c == '\n') {
-            needs_quotes = true;
-            break;
-        }
+std::string Entry::FlowOperator() const {
+    switch (flow_direction) {
+    case FlowDirection::Outbound: return "->";
+    case FlowDirection::Inbound: return "<-";
+    case FlowDirection::Bidirectional: return "<>";
+    default: return "";
     }
-    if (!t.empty() && (t.front() == ' ' || t.back() == ' '))
-        needs_quotes = true;
-
-    if (!needs_quotes)
-        return t;
-
-    std::string out;
-    out.reserve(t.size() + 4);
-    out += '"';
-    for (char c : t) {
-        if (c == '\\') out += "\\\\";
-        else if (c == '"') out += "\\\"";
-        else if (c == '\n') out += "\\n";
-        else out += c;
-    }
-    out += '"';
-    return out;
 }
 
 std::string FormatMode(uint32_t mode) {
     char buf[11];
 
-    // File type (first character)
     uint32_t type_bits = mode & ModeTypeMask;
-    if (type_bits == 0)           buf[0] = '-'; // regular
+    if (type_bits == 0)                buf[0] = '-';
     else if (type_bits & ModeDir)        buf[0] = 'd';
     else if (type_bits & ModeSymlink)    buf[0] = 'l';
     else if (type_bits & ModeNamedPipe)  buf[0] = 'p';
@@ -103,7 +88,6 @@ std::string FormatMode(uint32_t mode) {
     else if (type_bits & ModeCharDevice) buf[0] = 'c';
     else                                 buf[0] = '?';
 
-    // Permission bits
     const char *rwx = "rwxrwxrwx";
     for (int i = 0; i < 9; i++) {
         if (mode & (1u << (8 - i)))
@@ -112,16 +96,9 @@ std::string FormatMode(uint32_t mode) {
             buf[i + 1] = '-';
     }
 
-    // Special bits
-    if (mode & ModeSetuid) {
-        buf[3] = (buf[3] == 'x') ? 's' : 'S';
-    }
-    if (mode & ModeSetgid) {
-        buf[6] = (buf[6] == 'x') ? 's' : 'S';
-    }
-    if (mode & ModeSticky) {
-        buf[9] = (buf[9] == 'x') ? 't' : 'T';
-    }
+    if (mode & ModeSetuid) buf[3] = (buf[3] == 'x') ? 's' : 'S';
+    if (mode & ModeSetgid) buf[6] = (buf[6] == 'x') ? 's' : 'S';
+    if (mode & ModeSticky) buf[9] = (buf[9] == 'x') ? 't' : 'T';
 
     buf[10] = '\0';
     return buf;
@@ -133,9 +110,8 @@ uint32_t ParseMode(const std::string &s) {
 
     uint32_t mode = 0;
 
-    // File type
     switch (s[0]) {
-    case '-': break; // regular
+    case '-': break;
     case 'd': mode |= ModeDir; break;
     case 'l': mode |= ModeSymlink; break;
     case 'p': mode |= ModeNamedPipe; break;
@@ -146,7 +122,6 @@ uint32_t ParseMode(const std::string &s) {
         throw std::invalid_argument(std::string("unknown file type: ") + s[0]);
     }
 
-    // Permission bits
     if (s[1] == 'r') mode |= 0400;
     if (s[2] == 'w') mode |= 0200;
     if (s[3] == 'x' || s[3] == 's') mode |= 0100;
@@ -157,7 +132,6 @@ uint32_t ParseMode(const std::string &s) {
     if (s[8] == 'w') mode |= 0002;
     if (s[9] == 'x' || s[9] == 't') mode |= 0001;
 
-    // Special bits
     if (s[3] == 's' || s[3] == 'S') mode |= ModeSetuid;
     if (s[6] == 's' || s[6] == 'S') mode |= ModeSetgid;
     if (s[9] == 't' || s[9] == 'T') mode |= ModeSticky;
@@ -189,8 +163,6 @@ int64_t ParseTimestamp(const std::string &s) {
 
     int year, month, day, hour, minute, second;
 
-    // Try canonical: 2006-01-02T15:04:05Z
-    // Must verify 'Z' suffix — sscanf returns 6 even if trailing literal fails
     if (s.back() == 'Z' &&
         std::sscanf(s.c_str(), "%d-%d-%dT%d:%d:%dZ",
                     &year, &month, &day, &hour, &minute, &second) == 6) {
@@ -208,7 +180,6 @@ int64_t ParseTimestamp(const std::string &s) {
 #endif
     }
 
-    // Try RFC3339 with timezone offset: 2006-01-02T15:04:05+07:00
     int tz_h, tz_m;
     char tz_sign;
     if (std::sscanf(s.c_str(), "%d-%d-%dT%d:%d:%d%c%d:%d",
@@ -236,10 +207,65 @@ int64_t ParseTimestamp(const std::string &s) {
     throw std::invalid_argument("cannot parse timestamp: " + s);
 }
 
+// Canonical form: null mode is "-" (single dash), no indentation.
+// C4 ID or "-" is always the last field.
 std::string Entry::Canonical() const {
     std::string line;
 
-    // Mode
+    // Mode: null renders as single "-"
+    bool is_null_mode = (mode == 0 && !IsDir() && !IsSymlink());
+    if (is_null_mode)
+        line += '-';
+    else
+        line += FormatMode(mode);
+
+    line += ' ';
+    line += FormatTimestamp(timestamp);
+    line += ' ';
+
+    if (size < 0)
+        line += '-';
+    else
+        line += std::to_string(size);
+
+    line += ' ';
+    line += formatName(name, is_sequence);
+
+    // Symlink target, hard link marker, or flow link
+    if (!target.empty()) {
+        line += " -> ";
+        line += formatTarget(target);
+    } else if (hard_link != 0) {
+        if (hard_link < 0) {
+            line += " ->";
+        } else {
+            line += " ->";
+            line += std::to_string(hard_link);
+        }
+    } else if (flow_direction != FlowDirection::None) {
+        line += ' ';
+        line += FlowOperator();
+        line += ' ';
+        line += flow_target;
+    }
+
+    // C4 ID or "-" is always the last field
+    if (!id.IsNil()) {
+        line += ' ';
+        line += id.String();
+    } else {
+        line += " -";
+    }
+
+    return line;
+}
+
+// Format (display): null mode is "----------", includes indentation.
+// C4 ID or "-" is always the last field.
+std::string Entry::Format(int indent_width) const {
+    std::string line(static_cast<size_t>(depth * indent_width), ' ');
+
+    // Mode: null renders as "----------" in display format
     bool is_null_mode = (mode == 0 && !IsDir() && !IsSymlink());
     if (is_null_mode)
         line += "----------";
@@ -247,41 +273,44 @@ std::string Entry::Canonical() const {
         line += FormatMode(mode);
 
     line += ' ';
-
-    // Timestamp
     line += FormatTimestamp(timestamp);
-
     line += ' ';
 
-    // Size
     if (size < 0)
         line += '-';
     else
         line += std::to_string(size);
 
     line += ' ';
+    line += formatName(name, is_sequence);
 
-    // Name
-    line += formatName(name);
-
-    // Symlink target
+    // Symlink target, hard link marker, or flow link
     if (!target.empty()) {
         line += " -> ";
         line += formatTarget(target);
+    } else if (hard_link != 0) {
+        if (hard_link < 0) {
+            line += " ->";
+        } else {
+            line += " ->";
+            line += std::to_string(hard_link);
+        }
+    } else if (flow_direction != FlowDirection::None) {
+        line += ' ';
+        line += FlowOperator();
+        line += ' ';
+        line += flow_target;
     }
 
-    // C4 ID
+    // C4 ID or "-" is always the last field
     if (!id.IsNil()) {
         line += ' ';
         line += id.String();
+    } else {
+        line += " -";
     }
 
     return line;
-}
-
-std::string Entry::Format(int indent_width) const {
-    std::string indent(static_cast<size_t>(depth * indent_width), ' ');
-    return indent + Canonical();
 }
 
 } // namespace c4m
