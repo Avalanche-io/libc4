@@ -1,5 +1,8 @@
 # libc4
 
+[![CI](https://github.com/Avalanche-io/libc4/actions/workflows/ci.yml/badge.svg)](https://github.com/Avalanche-io/libc4/actions/workflows/ci.yml)
+[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
+
 C/C++ reference implementation of the C4 ID system ([SMPTE ST 2114:2017](https://ieeexplore.ieee.org/document/8255805)).
 
 ```cpp
