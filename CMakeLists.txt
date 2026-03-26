@@ -34,6 +34,7 @@ add_library(c4
     src/c4m/sequence.cpp
     src/c4m/operations.cpp
     src/c4m/safename.cpp
+    src/c4m/detect.cpp
 )
 
 target_include_directories(c4

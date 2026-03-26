@@ -25,6 +25,11 @@ add_executable(c4m_operations_test c4m_operations_test.cpp)
 target_link_libraries(c4m_operations_test PRIVATE c4 Catch2::Catch2WithMain)
 catch_discover_tests(c4m_operations_test)
 
+# c4m-aware identification tests
+add_executable(c4m_identify_test c4m_identify_test.cpp)
+target_link_libraries(c4m_identify_test PRIVATE c4 Catch2::Catch2WithMain)
+catch_discover_tests(c4m_identify_test)
+
 # Benchmark test
 add_executable(c4_bench c4_bench.cpp)
 target_link_libraries(c4_bench PRIVATE c4 Catch2::Catch2WithMain)

@@ -19,6 +19,11 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#ifndef _WIN32
+#include <unistd.h>
+#else
+#include <io.h>
+#endif
 
 namespace {
 
@@ -215,6 +220,7 @@ ID ID::Parse(std::string_view str) {
 
 // C API implementation
 #include "internal.h"
+#include "c4/c4m.hpp"
 
 extern "C" {
 
@@ -284,6 +290,52 @@ c4_error_t c4_id_from_digest(const void *digest, size_t len, c4_id_t *out) {
     if (!digest || !out || len != c4::DigestLen) return C4_ERR_INVALID_INPUT;
     std::memcpy(out->digest.data(), digest, c4::DigestLen);
     return C4_OK;
+}
+
+int c4_looks_like_c4m(const char *data, size_t len) {
+    if (!data) return 0;
+    return c4m::LooksLikeC4m(std::string_view(data, len)) ? 1 : 0;
+}
+
+c4_error_t c4_identify_c4m_aware(const void *data, size_t len, c4_id_t *out) {
+    if (!out) return C4_ERR_INVALID_INPUT;
+    try {
+        auto id = c4::ID::IdentifyC4mAware(data, len);
+        std::memcpy(out->digest.data(), id.Digest().data(), c4::DigestLen);
+        return C4_OK;
+    } catch (...) {
+        return C4_ERR_IO;
+    }
+}
+
+c4_error_t c4_identify_file(const char *path, c4_id_t *out) {
+    if (!path || !out) return C4_ERR_INVALID_INPUT;
+    try {
+        auto id = c4::ID::IdentifyFile(path);
+        std::memcpy(out->digest.data(), id.Digest().data(), c4::DigestLen);
+        return C4_OK;
+    } catch (...) {
+        return C4_ERR_IO;
+    }
+}
+
+c4_error_t c4_identify_fd(int fd, c4_id_t *out) {
+    if (!out || fd < 0) return C4_ERR_INVALID_INPUT;
+    try {
+        // Read all data from fd, then use standard Identify
+        std::string buf;
+        char tmp[262144];
+        ssize_t n;
+        while ((n = read(fd, tmp, sizeof(tmp))) > 0)
+            buf.append(tmp, static_cast<size_t>(n));
+        if (n < 0)
+            return C4_ERR_IO;
+        auto id = c4::ID::Identify(buf);
+        std::memcpy(out->digest.data(), id.Digest().data(), c4::DigestLen);
+        return C4_OK;
+    } catch (...) {
+        return C4_ERR_IO;
+    }
 }
 
 } // extern "C"

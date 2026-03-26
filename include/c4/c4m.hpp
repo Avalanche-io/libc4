@@ -322,6 +322,20 @@ std::string EscapeField(const std::string &name, bool is_sequence);
 // UnescapeField reverses EscapeField (field-boundary unescaping only).
 std::string UnescapeField(const std::string &escaped);
 
+// -----------------------------------------------------------------------
+// c4m Detection
+// -----------------------------------------------------------------------
+
+// LooksLikeC4m performs the cheap Phase 1 heuristic: skip leading spaces,
+// check if the first non-space byte is a valid c4m mode character
+// ('-', 'd', 'l', 'p', 's', 'b', 'c'). Returns true if content might be
+// c4m and deserves a full parse attempt.
+bool LooksLikeC4m(std::string_view data);
+
+// CanonicalizeC4m attempts to parse data as c4m. On success, returns the
+// canonical encoding (sorted, deterministic). On failure, returns empty.
+std::string CanonicalizeC4m(std::string_view data);
+
 } // namespace c4m
 
 #endif // C4_C4M_HPP

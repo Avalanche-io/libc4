@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "c4/c4.hpp"
 #include "c4/c4.h"
+#include "c4/c4m.hpp"
 
 #include <openssl/evp.h>
 
@@ -72,7 +73,37 @@ ID ID::Identify(std::istream &stream) {
     return id;
 }
 
+ID ID::IdentifyC4mAware(const void *data, size_t len) {
+    std::string_view sv(static_cast<const char *>(data), len);
+    return IdentifyC4mAware(sv);
+}
+
+ID ID::IdentifyC4mAware(std::string_view data) {
+    if (c4m::LooksLikeC4m(data)) {
+        std::string canonical = c4m::CanonicalizeC4m(data);
+        if (!canonical.empty())
+            return Identify(canonical);
+    }
+    return Identify(data);
+}
+
 ID ID::IdentifyFile(const std::filesystem::path &path) {
+    // For .c4m files, use c4m-aware identification
+    if (path.extension() == ".c4m") {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("cannot open file: " + path.string());
+        }
+        std::string content((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+        // .c4m extension: skip Phase 1, go directly to Phase 2 parse attempt
+        std::string canonical = c4m::CanonicalizeC4m(content);
+        if (!canonical.empty())
+            return Identify(canonical);
+        // Parse failed: fall through to raw byte hash
+        return Identify(content);
+    }
+
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         throw std::runtime_error("cannot open file: " + path.string());

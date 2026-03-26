@@ -28,8 +28,13 @@ public:
     static ID Identify(std::string_view data);
     static ID Identify(std::istream &stream);
 
-    // Identify a file
+    // Identify a file (c4m-aware: .c4m extension triggers canonical heuristic)
     static ID IdentifyFile(const std::filesystem::path &path);
+
+    // c4m-aware identification: if data parses as a valid c4m file,
+    // canonicalize it before hashing. Otherwise hash raw bytes.
+    static ID IdentifyC4mAware(const void *data, size_t len);
+    static ID IdentifyC4mAware(std::string_view data);
 
     // Parse from string
     static ID Parse(std::string_view str);

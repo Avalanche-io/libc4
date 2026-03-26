@@ -38,8 +38,15 @@ c4_error_t c4_identify(const void *data, size_t len, c4_id_t *out);
 // Identify file: compute C4 ID from a file descriptor
 c4_error_t c4_identify_fd(int fd, c4_id_t *out);
 
-// Identify file by path
+// Identify file by path (c4m-aware: .c4m extension triggers canonical heuristic)
 c4_error_t c4_identify_file(const char *path, c4_id_t *out);
+
+// c4m detection heuristic: returns 1 if data looks like it might be c4m
+int c4_looks_like_c4m(const char *data, size_t len);
+
+// c4m-aware identification: if data parses as valid c4m, canonicalize
+// before hashing. Otherwise hash raw bytes.
+c4_error_t c4_identify_c4m_aware(const void *data, size_t len, c4_id_t *out);
 
 // Encode ID to string. buf must be at least C4_ID_LEN+1 bytes.
 c4_error_t c4_id_string(const c4_id_t *id, char *buf, size_t buflen);
