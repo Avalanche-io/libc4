@@ -197,14 +197,6 @@ public:
     // Prefix filter returning a new manifest (matches full paths).
     Manifest FilterByPrefix(const std::string &prefix) const;
 
-    // Scan directory (not yet implemented)
-    static Manifest Scan(const std::filesystem::path &dir);
-
-    // Legacy set operations (not yet implemented)
-    Manifest Diff(const Manifest &other) const;
-    Manifest Merge(const Manifest &other) const;
-    Manifest Intersect(const Manifest &other) const;
-
 private:
     std::string version_ = "1.0";
     std::vector<Entry> entries_;

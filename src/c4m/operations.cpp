@@ -965,28 +965,4 @@ MergeResult Merge(const Manifest &base, const Manifest &local, const Manifest &r
     return result;
 }
 
-// -----------------------------------------------------------------------
-// Legacy member function stubs
-// -----------------------------------------------------------------------
-
-Manifest Manifest::Diff(const Manifest &other) const {
-    (void)other;
-    throw std::runtime_error("c4m Manifest::Diff not yet implemented (use free function c4m::Diff)");
-}
-
-Manifest Manifest::Merge(const Manifest &other) const {
-    (void)other;
-    throw std::runtime_error("c4m Manifest::Merge not yet implemented (use free function c4m::Merge)");
-}
-
-Manifest Manifest::Intersect(const Manifest &other) const {
-    (void)other;
-    throw std::runtime_error("c4m intersection not yet implemented");
-}
-
-Manifest Manifest::Scan(const std::filesystem::path &dir) {
-    (void)dir;
-    throw std::runtime_error("c4m scan not yet implemented");
-}
-
 } // namespace c4m
