@@ -1237,10 +1237,16 @@ TEST_CASE("C4M: Canonicalize propagates size", "[c4m][tree]") {
     m.AddEntry(dir);
     m.AddEntry(f1);
     m.AddEntry(f2);
+
+    // Compute expected size: children sizes + canonical c4m content size
+    int64_t expected_size = f1.size + f2.size;
+    expected_size += static_cast<int64_t>(f1.Canonical().size()) + 1; // +1 for '\n'
+    expected_size += static_cast<int64_t>(f2.Canonical().size()) + 1;
+
     m.Canonicalize();
 
-    // Directory size should be sum of children
-    REQUIRE(m.Entries()[0].size == 300);
+    // Directory size = sum of children + byte length of canonical c4m content
+    REQUIRE(m.Entries()[0].size == expected_size);
     // Directory timestamp should be most recent child
     REQUIRE(m.Entries()[0].timestamp == 2000);
 }

@@ -352,6 +352,12 @@ void Manifest::Canonicalize() {
                 if (k->size < 0) { has_null = true; break; }
                 total += k->size;
             }
+            if (!has_null) {
+                // Add byte length of the directory's canonical c4m content
+                for (const Entry *k : kids) {
+                    total += static_cast<int64_t>(k->Canonical().size()) + 1; // +1 for '\n'
+                }
+            }
             entry.size = has_null ? -1 : total;
         }
 
