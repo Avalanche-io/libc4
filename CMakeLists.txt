@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(libc4
-    VERSION 1.0.11
+    VERSION 1.0.12
     DESCRIPTION "C4 ID and C4M reference implementation"
     LANGUAGES CXX C
 )
