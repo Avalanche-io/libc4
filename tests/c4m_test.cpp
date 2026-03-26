@@ -1272,6 +1272,19 @@ TEST_CASE("C4M: Canonicalize nil-infectious size", "[c4m][tree]") {
     REQUIRE(m.Entries()[0].size == -1);
 }
 
+TEST_CASE("C4M: Canonicalize empty dir size is zero", "[c4m][tree]") {
+    c4m::Manifest m;
+    c4m::Entry dir;
+    dir.name = "empty/"; dir.mode = c4m::ModeDir | 0755;
+    dir.size = -1; dir.timestamp = 0; dir.depth = 0;
+
+    m.AddEntry(dir);
+    m.Canonicalize();
+
+    // An empty directory has known size 0, not null
+    REQUIRE(m.Entries()[0].size == 0);
+}
+
 TEST_CASE("C4M: ComputeC4ID is deterministic", "[c4m][tree]") {
     auto m = makeNestedManifest();
     auto id1 = m.ComputeC4ID();

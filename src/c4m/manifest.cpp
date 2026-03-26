@@ -345,6 +345,13 @@ void Manifest::Canonicalize() {
                 break;
         }
 
+        // Empty directory: size is definitively 0.
+        if (kids.empty()) {
+            if (entry.size < 0)
+                entry.size = 0;
+            continue;
+        }
+
         if (entry.size < 0) {
             int64_t total = 0;
             bool has_null = false;
