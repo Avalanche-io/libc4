@@ -59,11 +59,14 @@ std::string str = id.String();
 c4::IDs ids;
 ids.Append(c4::ID::Identify("alfa"));
 ids.Append(c4::ID::Identify("bravo"));
-auto tree_id = ids.ID();  // order-independent
+auto tree_id = ids.TreeID();  // order-independent
 
-// C4M manifests (TODO: parser implementation in progress)
-// auto manifest = c4m::Manifest::ParseFile("project.c4m");
-// auto diff = manifest.Diff(other);
+// Parse a c4m file
+auto manifest = c4m::Manifest::ParseFile("project.c4m");
+auto entries = manifest.Entries();
+
+// Diff two manifests
+auto result = c4m::Diff(old_manifest, new_manifest);
 ```
 
 ### C API
