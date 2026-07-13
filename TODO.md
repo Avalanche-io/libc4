@@ -4,6 +4,7 @@
 - [x] Implement .c4m format parser against specification (94+ tests passing)
 - [x] Generate cross-language test vectors from Go implementation
 - [x] Diff, merge operations (free functions: c4m::Diff, c4m::Merge)
+- [x] Patch-chain resolution in the decoder: verified checkpoints + closing validator (grammar erratum 2026-07-13; shared chain-vector conformance test)
 - [~] Sequence detection and frame range parsing (partial)
 - [~] Intersect operation (free function exists, limited scope)
 

@@ -252,10 +252,240 @@ Manifest Manifest::ParseFile(const std::filesystem::path &path) {
     return Parse(f);
 }
 
+// parseEntryFromLine parses one manifest entry from a full (indentation-included)
+// line. It detects and updates indent_width (auto-detected from the first
+// indented line). Mirrors the Go reference decoder.parseEntryFromLine.
+static Entry parseEntryFromLine(const std::string &line, int &indent_width, int line_num) {
+    // Detect indentation
+    size_t indent = 0;
+    while (indent < line.size() && line[indent] == ' ')
+        indent++;
+
+    if (indent_width < 0 && indent > 0)
+        indent_width = static_cast<int>(indent);
+
+    int depth = 0;
+    if (indent_width > 0 && indent > 0)
+        depth = static_cast<int>(indent) / indent_width;
+
+    // Content after indentation
+    std::string content = line.substr(indent);
+    if (content.empty())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": empty entry");
+
+    // Parse mode
+    size_t pos = 0;
+    std::string mode_str;
+
+    if (content.size() >= 2 && content[0] == '-' && content[1] == ' ') {
+        mode_str = "-";
+        pos = 2;
+    } else if (content.size() >= 11) {
+        mode_str = content.substr(0, 10);
+        pos = 11;
+    } else {
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": line too short");
+    }
+
+    uint32_t mode = 0;
+    if (mode_str != "-" && mode_str != "----------") {
+        mode = ParseMode(mode_str);
+    }
+
+    Entry entry;
+    entry.mode = mode;
+    entry.depth = depth;
+
+    // Parse timestamp
+    if (pos >= content.size())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": missing timestamp");
+
+    std::string ts_str;
+    if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
+        ts_str = "-";
+        pos += 2;
+    } else if (content[pos] == '0' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
+        ts_str = "0";
+        pos += 2;
+    } else {
+        if (content.size() >= pos + 20 && content[pos + 4] == '-' && content[pos + 10] == 'T') {
+            size_t end_idx = pos + 20;
+            if (content.size() >= pos + 25 &&
+                (content[pos + 19] == '+' || content[pos + 19] == '-'))
+                end_idx = pos + 25;
+            ts_str = content.substr(pos, end_idx - pos);
+            pos = end_idx;
+            if (pos < content.size() && content[pos] == ' ')
+                pos++;
+        } else {
+            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                     ": cannot parse timestamp");
+        }
+    }
+    entry.timestamp = ParseTimestamp(ts_str);
+
+    // Parse size
+    skipSpaces(content, pos);
+    if (pos >= content.size())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": missing size");
+
+    if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
+        entry.size = NullSize;
+        pos++;
+    } else {
+        size_t size_start = pos;
+        while (pos < content.size() &&
+               ((content[pos] >= '0' && content[pos] <= '9') || content[pos] == ','))
+            pos++;
+        if (pos == size_start)
+            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                     ": invalid size");
+        std::string size_str;
+        for (size_t i = size_start; i < pos; i++) {
+            if (content[i] != ',')
+                size_str += content[i];
+        }
+        entry.size = std::stoll(size_str);
+    }
+
+    // Skip space after size
+    skipSpaces(content, pos);
+
+    // Parse name using backslash-escaped name parser
+    if (pos >= content.size())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": missing name");
+
+    auto name_result = parseNameOrTarget(content, pos, true);
+    entry.name = UnsafeName(name_result.value);
+
+    // Check for sequence notation in raw name
+    if (hasUnescapedSequenceNotation(name_result.raw)) {
+        entry.is_sequence = true;
+        entry.pattern = entry.name;
+    }
+
+    // Skip whitespace
+    skipSpaces(content, pos);
+
+    // Parse link operators: ->, <-, <>
+    bool is_symlink = (mode & ModeSymlink) != 0;
+
+    if (pos + 1 < content.size() && content[pos] == '-' && content[pos + 1] == '>') {
+        pos += 2;
+
+        if (is_symlink) {
+            // Symlink mode: -> is always a symlink target
+            skipSpaces(content, pos);
+            if (pos < content.size()) {
+                entry.target = UnsafeName(parseSymlinkTarget(content, pos));
+                skipSpaces(content, pos);
+            }
+        } else if (pos < content.size() && content[pos] >= '1' && content[pos] <= '9') {
+            // Hard link group number: ->N
+            size_t group_start = pos;
+            while (pos < content.size() && content[pos] >= '0' && content[pos] <= '9')
+                pos++;
+            entry.hard_link = std::stoi(content.substr(group_start, pos - group_start));
+            skipSpaces(content, pos);
+        } else {
+            skipSpaces(content, pos);
+
+            // Determine type by examining token after ->
+            if (pos < content.size() && isFlowTarget(content, pos)) {
+                entry.flow_direction = FlowDirection::Outbound;
+                entry.flow_target = parseFlowTarget(content, pos);
+                skipSpaces(content, pos);
+            } else {
+                std::string remaining;
+                if (pos < content.size()) {
+                    remaining = content.substr(pos);
+                    while (!remaining.empty() && remaining.back() == ' ')
+                        remaining.pop_back();
+                }
+                if (remaining == "-" || (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4')) {
+                    // Hard link (ungrouped)
+                    entry.hard_link = -1;
+                } else if (pos < content.size()) {
+                    // Fallback: treat as symlink target
+                    entry.target = UnsafeName(parseSymlinkTarget(content, pos));
+                    skipSpaces(content, pos);
+                }
+            }
+        }
+    } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '-') {
+        pos += 2;
+        skipSpaces(content, pos);
+        entry.flow_direction = FlowDirection::Inbound;
+        entry.flow_target = parseFlowTarget(content, pos);
+        skipSpaces(content, pos);
+    } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '>') {
+        pos += 2;
+        skipSpaces(content, pos);
+        entry.flow_direction = FlowDirection::Bidirectional;
+        entry.flow_target = parseFlowTarget(content, pos);
+        skipSpaces(content, pos);
+    }
+
+    // Parse C4 ID or null marker
+    if (pos < content.size()) {
+        std::string remaining = content.substr(pos);
+        while (!remaining.empty() && remaining.back() == ' ')
+            remaining.pop_back();
+
+        if (remaining == "-") {
+            // Null C4 ID
+        } else if (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4') {
+            entry.id = c4::ID::Parse(remaining);
+        }
+    }
+
+    return entry;
+}
+
+// applyChainSection folds one accumulated section into the running manifest.
+// The first section (before any checkpoint) is the base: its entries are
+// appended directly. Every later section is a patch applied by name-and-path
+// (add / modify / restate-identical = removal, recursive). base_ is preserved
+// across ApplyPatch so that, after an external base reference, checkpoint
+// verification stays deferred to the resolver that fetches the base.
+static void applyChainSection(Manifest &m, std::vector<Entry> &section, bool patch_mode) {
+    if (!patch_mode) {
+        for (auto &e : section)
+            m.AddEntry(std::move(e));
+    } else if (!section.empty()) {
+        Manifest patch;
+        for (auto &e : section)
+            patch.AddEntry(std::move(e));
+        c4::ID saved_base = m.Base();
+        m = ApplyPatch(m, patch);
+        m.SetBase(saved_base);
+    }
+    section.clear();
+}
+
 Manifest Manifest::Parse(std::istream &stream) {
     Manifest m;
     int line_num = 0;
     int indent_width = -1; // auto-detect
+
+    // Chain resolution: entries accumulate in `section` between bare-C4-ID
+    // boundaries. A bare ID resolves as follows (grammar erratum 2026-07-13,
+    // matching Go reference decoder.go):
+    //   - first non-blank line, no entries yet -> external base reference
+    //   - otherwise a checkpoint naming the accumulated manifest state: flush
+    //     the pending section (base append or patch apply), then verify the
+    //     accumulated C4 ID against the checkpoint (reject on mismatch).
+    // A trailing bare ID at EOF is the closing validator (verified above);
+    // consecutive checkpoints re-verify the same state and are accepted.
+    // Verification is skipped once an external base reference is present.
+    std::vector<Entry> section;
+    bool first_line = true;
+    bool patch_mode = false;
 
     std::string line;
     while (readLine(stream, line, line_num)) {
@@ -267,17 +497,40 @@ Manifest Manifest::Parse(std::istream &stream) {
         else
             trimmed = trimmed.substr(first_non_space);
 
-        // Skip blank lines
+        // Skip blank lines (do not clear first_line: "first non-blank line").
         if (trimmed.empty())
             continue;
 
-        // Skip inline ID lists (range data lines, not entries)
+        // Skip inline ID lists (range data lines, not entries or boundaries).
         if (isInlineIDList(trimmed))
             continue;
 
-        // Skip bare C4 ID lines (patch boundaries -- not yet supported in C++ impl)
-        if (isBareC4ID(trimmed))
+        // Bare C4 ID line: patch boundary (base reference or checkpoint).
+        if (isBareC4ID(trimmed)) {
+            c4::ID id = c4::ID::Parse(trimmed);
+
+            if (first_line && section.empty()) {
+                // First line of stream: external base reference.
+                m.SetBase(id);
+            } else {
+                applyChainSection(m, section, patch_mode);
+                patch_mode = true;
+
+                // A resolving decoder MUST verify checkpoints -- except after
+                // an unresolved external base reference, where the accumulated
+                // state is unknowable here.
+                if (m.Base().IsNil()) {
+                    c4::ID got = m.ComputeC4ID();
+                    if (got != id) {
+                        throw std::runtime_error(
+                            "c4m: patch ID mismatch (line " + std::to_string(line_num) +
+                            "): accumulated " + got.String() + ", checkpoint " + id.String());
+                    }
+                }
+            }
+            first_line = false;
             continue;
+        }
 
         // Reject directive lines (lines starting with @).
         // Go reference behavior: directives are not supported.
@@ -286,195 +539,14 @@ Manifest Manifest::Parse(std::istream &stream) {
                                      std::to_string(line_num) + "): " + line);
         }
 
-        // Detect indentation
-        size_t indent = 0;
-        while (indent < line.size() && line[indent] == ' ')
-            indent++;
-
-        if (indent_width < 0 && indent > 0)
-            indent_width = static_cast<int>(indent);
-
-        int depth = 0;
-        if (indent_width > 0 && indent > 0)
-            depth = static_cast<int>(indent) / indent_width;
-
-        // Content after indentation
-        std::string content = line.substr(indent);
-        if (content.empty())
-            continue;
-
-        // Parse mode
-        size_t pos = 0;
-        std::string mode_str;
-
-        if (content.size() >= 2 && content[0] == '-' && content[1] == ' ') {
-            mode_str = "-";
-            pos = 2;
-        } else if (content.size() >= 11) {
-            mode_str = content.substr(0, 10);
-            pos = 11;
-        } else {
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": line too short");
-        }
-
-        uint32_t mode = 0;
-        if (mode_str != "-" && mode_str != "----------") {
-            mode = ParseMode(mode_str);
-        }
-
-        Entry entry;
-        entry.mode = mode;
-        entry.depth = depth;
-
-        // Parse timestamp
-        if (pos >= content.size())
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": missing timestamp");
-
-        std::string ts_str;
-        if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-            ts_str = "-";
-            pos += 2;
-        } else if (content[pos] == '0' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-            ts_str = "0";
-            pos += 2;
-        } else {
-            if (content.size() >= pos + 20 && content[pos + 4] == '-' && content[pos + 10] == 'T') {
-                size_t end_idx = pos + 20;
-                if (content.size() >= pos + 25 &&
-                    (content[pos + 19] == '+' || content[pos + 19] == '-'))
-                    end_idx = pos + 25;
-                ts_str = content.substr(pos, end_idx - pos);
-                pos = end_idx;
-                if (pos < content.size() && content[pos] == ' ')
-                    pos++;
-            } else {
-                throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                         ": cannot parse timestamp");
-            }
-        }
-        entry.timestamp = ParseTimestamp(ts_str);
-
-        // Parse size
-        skipSpaces(content, pos);
-        if (pos >= content.size())
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": missing size");
-
-        if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-            entry.size = NullSize;
-            pos++;
-        } else {
-            size_t size_start = pos;
-            while (pos < content.size() &&
-                   ((content[pos] >= '0' && content[pos] <= '9') || content[pos] == ','))
-                pos++;
-            if (pos == size_start)
-                throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                         ": invalid size");
-            std::string size_str;
-            for (size_t i = size_start; i < pos; i++) {
-                if (content[i] != ',')
-                    size_str += content[i];
-            }
-            entry.size = std::stoll(size_str);
-        }
-
-        // Skip space after size
-        skipSpaces(content, pos);
-
-        // Parse name using backslash-escaped name parser
-        if (pos >= content.size())
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": missing name");
-
-        auto name_result = parseNameOrTarget(content, pos, true);
-        entry.name = UnsafeName(name_result.value);
-
-        // Check for sequence notation in raw name
-        if (hasUnescapedSequenceNotation(name_result.raw)) {
-            entry.is_sequence = true;
-            entry.pattern = entry.name;
-        }
-
-        // Skip whitespace
-        skipSpaces(content, pos);
-
-        // Parse link operators: ->, <-, <>
-        bool is_symlink = (mode & ModeSymlink) != 0;
-
-        if (pos + 1 < content.size() && content[pos] == '-' && content[pos + 1] == '>') {
-            pos += 2;
-
-            if (is_symlink) {
-                // Symlink mode: -> is always a symlink target
-                skipSpaces(content, pos);
-                if (pos < content.size()) {
-                    entry.target = UnsafeName(parseSymlinkTarget(content, pos));
-                    skipSpaces(content, pos);
-                }
-            } else if (pos < content.size() && content[pos] >= '1' && content[pos] <= '9') {
-                // Hard link group number: ->N
-                size_t group_start = pos;
-                while (pos < content.size() && content[pos] >= '0' && content[pos] <= '9')
-                    pos++;
-                entry.hard_link = std::stoi(content.substr(group_start, pos - group_start));
-                skipSpaces(content, pos);
-            } else {
-                skipSpaces(content, pos);
-
-                // Determine type by examining token after ->
-                if (pos < content.size() && isFlowTarget(content, pos)) {
-                    entry.flow_direction = FlowDirection::Outbound;
-                    entry.flow_target = parseFlowTarget(content, pos);
-                    skipSpaces(content, pos);
-                } else {
-                    std::string remaining;
-                    if (pos < content.size()) {
-                        remaining = content.substr(pos);
-                        while (!remaining.empty() && remaining.back() == ' ')
-                            remaining.pop_back();
-                    }
-                    if (remaining == "-" || (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4')) {
-                        // Hard link (ungrouped)
-                        entry.hard_link = -1;
-                    } else if (pos < content.size()) {
-                        // Fallback: treat as symlink target
-                        entry.target = UnsafeName(parseSymlinkTarget(content, pos));
-                        skipSpaces(content, pos);
-                    }
-                }
-            }
-        } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '-') {
-            pos += 2;
-            skipSpaces(content, pos);
-            entry.flow_direction = FlowDirection::Inbound;
-            entry.flow_target = parseFlowTarget(content, pos);
-            skipSpaces(content, pos);
-        } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '>') {
-            pos += 2;
-            skipSpaces(content, pos);
-            entry.flow_direction = FlowDirection::Bidirectional;
-            entry.flow_target = parseFlowTarget(content, pos);
-            skipSpaces(content, pos);
-        }
-
-        // Parse C4 ID or null marker
-        if (pos < content.size()) {
-            std::string remaining = content.substr(pos);
-            while (!remaining.empty() && remaining.back() == ' ')
-                remaining.pop_back();
-
-            if (remaining == "-") {
-                // Null C4 ID
-            } else if (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4') {
-                entry.id = c4::ID::Parse(remaining);
-            }
-        }
-
-        m.entries_.push_back(std::move(entry));
+        section.push_back(parseEntryFromLine(line, indent_width, line_num));
+        first_line = false;
     }
+
+    // Flush the trailing section. A stream may end without a closing validator
+    // (final patch applies unverified, C4M-STANDARD 10.7); a stream ending in a
+    // bare C4 ID already flushed an empty section and verified above.
+    applyChainSection(m, section, patch_mode);
 
     return m;
 }
