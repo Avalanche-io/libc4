@@ -18,6 +18,8 @@ catch_discover_tests(c4_id_test)
 # C4M parser and encoder tests
 add_executable(c4m_test c4m_test.cpp)
 target_link_libraries(c4m_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_test PRIVATE
+    C4M_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 catch_discover_tests(c4m_test)
 
 # C4M operations tests (PatchDiff, ApplyPatch, Diff, Merge, chain)

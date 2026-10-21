@@ -8,8 +8,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <fstream>
+#include <iterator>
+#include <random>
 #include <sstream>
 #include <string>
+#include <vector>
 
 // =============================================================
 // Mode formatting / parsing
@@ -351,6 +356,56 @@ TEST_CASE("C4M: natural sort shorter first", "[c4m][sort]") {
 
 TEST_CASE("C4M: natural sort padding", "[c4m][sort]") {
     REQUIRE(c4m::NaturalLess("render.1.exr", "render.01.exr"));
+}
+
+TEST_CASE("C4M: natural sort text segments compare whole", "[c4m][sort]") {
+    // "a" < "ab" as segments, so a1 < ab although '1' > 'b' is false bytewise
+    REQUIRE(c4m::NaturalLess("a1", "ab"));
+    REQUIRE_FALSE(c4m::NaturalLess("ab", "a1"));
+    REQUIRE(c4m::NaturalLess("a1b", "ab1"));
+}
+
+// The conformance vectors shared with c4 (Go), c4py, c4ts and c4-swift:
+// digit runs of 17 to 39 digits and text segments of unequal length. Every
+// pair must order as listed, and every permutation must sort to the list.
+TEST_CASE("C4M: natural sort conformance vectors", "[c4m][sort]") {
+    std::ifstream in(std::string(C4M_TESTDATA_DIR) + "/natural_sort_vectors.json");
+    REQUIRE(in.good());
+    std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    // The file is {"comment": "...", "sorted": ["...", ...]}; pull the strings
+    // of the "sorted" array without a JSON library.
+    size_t at = json.find("\"sorted\"");
+    REQUIRE(at != std::string::npos);
+    at = json.find('[', at);
+    size_t end = json.find(']', at);
+    std::vector<std::string> sorted;
+    size_t pos = at;
+    while (true) {
+        size_t q1 = json.find('"', pos);
+        if (q1 == std::string::npos || q1 > end) break;
+        size_t q2 = json.find('"', q1 + 1);
+        sorted.push_back(json.substr(q1 + 1, q2 - q1 - 1));
+        pos = q2 + 1;
+    }
+    REQUIRE(sorted.size() >= 20);
+
+    for (size_t i = 0; i < sorted.size(); i++) {
+        REQUIRE_FALSE(c4m::NaturalLess(sorted[i], sorted[i]));
+        for (size_t j = i + 1; j < sorted.size(); j++) {
+            INFO(sorted[i] << " < " << sorted[j]);
+            REQUIRE(c4m::NaturalLess(sorted[i], sorted[j]));
+            REQUIRE_FALSE(c4m::NaturalLess(sorted[j], sorted[i]));
+        }
+    }
+
+    std::mt19937 rng(1);
+    for (int round = 0; round < 200; round++) {
+        std::vector<std::string> names = sorted;
+        std::shuffle(names.begin(), names.end(), rng);
+        std::sort(names.begin(), names.end(),
+                  [](const std::string &x, const std::string &y) { return c4m::NaturalLess(x, y); });
+        REQUIRE(names == sorted);
+    }
 }
 
 // =============================================================
