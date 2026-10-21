@@ -3,7 +3,10 @@
 // Numeric segments are compared as integers: "file2" < "file10"
 //
 // This implementation walks both strings simultaneously without allocating
-// any heap memory — no vectors, no substrings.
+// any heap memory — no vectors, no substrings. Segments are compared whole,
+// as in the Go reference: a digit run against a digit run by integer value
+// of any length, a text run against a text run by bytes with the shorter
+// prefix first.
 
 #include "c4/c4m.hpp"
 
@@ -66,15 +69,29 @@ bool NaturalLess(const std::string &a, const std::string &b) {
             return !a_digit;
         }
 
-        // Both are text characters: compare lexicographically
-        if (a[ai] != b[bi]) {
-            return a[ai] < b[bi];
+        // Both are text segments: compare the whole segments, as the
+        // specification says, not character by character. The segments
+        // run to the next digit or the end; a shorter segment that is a
+        // prefix of the other is smaller ("a" < "ab", so "a1" < "ab" even
+        // though '1' and 'b' differ at the same offset).
+        size_t a_start = ai, b_start = bi;
+        while (ai < alen && !(a[ai] >= '0' && a[ai] <= '9')) ai++;
+        while (bi < blen && !(b[bi] >= '0' && b[bi] <= '9')) bi++;
+        size_t a_len = ai - a_start;
+        size_t b_len = bi - b_start;
+        size_t common = a_len < b_len ? a_len : b_len;
+        for (size_t k = 0; k < common; k++) {
+            unsigned char ca = a[a_start + k], cb = b[b_start + k];
+            if (ca != cb) {
+                return ca < cb;
+            }
         }
-        ai++;
-        bi++;
+        if (a_len != b_len) {
+            return a_len < b_len;
+        }
     }
 
-    // All compared characters equal: shorter string first
+    // All compared segments equal: fewer segments first
     return alen < blen;
 }
 
