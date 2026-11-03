@@ -51,3 +51,4 @@ target_link_libraries(c4m_deepen_vector_test PRIVATE c4 Catch2::Catch2WithMain)
 target_compile_definitions(c4m_deepen_vector_test PRIVATE
     C4M_DEEPEN_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/deepen-vector")
 catch_discover_tests(c4m_deepen_vector_test)
+target_compile_definitions(c4m_deepen_vector_test PRIVATE C4M_DEEPEN_VECTOR_CHAIN=1)

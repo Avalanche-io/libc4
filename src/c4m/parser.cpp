@@ -450,7 +450,8 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
 // applyChainSection folds one accumulated section into the running manifest.
 // The first section (before any checkpoint) is the base: its entries are
 // appended directly. Every later section is a patch applied by name-and-path
-// (add / modify / restate-identical = removal, recursive). base_ is preserved
+// (add / modify / restate-identical with no children = removal / restate-
+// identical directory with children = deepening, recursive). base_ is preserved
 // across ApplyPatch so that, after an external base reference, checkpoint
 // verification stays deferred to the resolver that fetches the base.
 static void applyChainSection(Manifest &m, std::vector<Entry> &section, bool patch_mode) {
