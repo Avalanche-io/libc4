@@ -273,8 +273,14 @@ static void applyPatchTree(PatchNode &base, const PatchNode &patch) {
 
         auto &b_node = b_it->second;
 
-        // Check if exact match (removal)
-        if (entriesIdentical(b_node.entry, p_node.entry)) {
+        // Check if exact match (removal). A restatement that declares
+        // children under it is deepening that directory, not removing it:
+        // breadth-first discovery learns a directory's children before it
+        // learns anything about the directory itself, so its parent line is
+        // necessarily unchanged. Falling through clobbers with an identical
+        // entry (a no-op) and recurses to merge the new children.
+        // (Erratum 2026-07-31; matches the Go reference.)
+        if (p_node.children.empty() && entriesIdentical(b_node.entry, p_node.entry)) {
             base.children.erase(b_it);
             continue;
         }

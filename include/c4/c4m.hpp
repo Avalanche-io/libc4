@@ -256,7 +256,10 @@ struct Conflict {
 // PatchDiff compares old and new manifests, producing a patch delta.
 PatchResult PatchDiff(const Manifest &old_m, const Manifest &new_m);
 
-// ApplyPatch applies patch entries to a base manifest.
+// ApplyPatch applies patch entries to a base manifest. Identical with no
+// children under it = removal (entry and subtree); identical directory with
+// children under it = deepening (entry kept, children applied recursively);
+// otherwise replace; new path = addition.
 Manifest ApplyPatch(const Manifest &base, const Manifest &patch);
 
 // Diff compares two manifests and returns categorized results.

@@ -72,6 +72,10 @@ c4m_patch_result_t *c4m_patch_diff(const c4m_manifest_t *old_m,
                                     c4_error_t *err);
 
 // Apply a patch to a base manifest, returning the new manifest.
+// A patch entry restating a base entry identically with no children under
+// it removes that entry (and its subtree); an identical directory entry
+// with children under it is deepened, never removed; any other restatement
+// replaces the entry; a new path is added.
 c4m_manifest_t *c4m_apply_patch(const c4m_manifest_t *base,
                                  const c4m_manifest_t *patch,
                                  c4_error_t *err);
