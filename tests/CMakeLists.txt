@@ -36,3 +36,11 @@ catch_discover_tests(c4m_identify_test)
 add_executable(c4_bench c4_bench.cpp)
 target_link_libraries(c4_bench PRIVATE c4 Catch2::Catch2WithMain)
 catch_discover_tests(c4_bench)
+
+# Cross-implementation deepen-vs-remove conformance test (erratum 2026-07-31).
+# C4M_DEEPEN_VECTOR_CHAIN is defined only where the parser resolves chains.
+add_executable(c4m_deepen_vector_test c4m_deepen_vector_test.cpp)
+target_link_libraries(c4m_deepen_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_deepen_vector_test PRIVATE
+    C4M_DEEPEN_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/deepen-vector")
+catch_discover_tests(c4m_deepen_vector_test)
