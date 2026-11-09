@@ -52,3 +52,12 @@ target_compile_definitions(c4m_deepen_vector_test PRIVATE
     C4M_DEEPEN_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/deepen-vector")
 catch_discover_tests(c4m_deepen_vector_test)
 target_compile_definitions(c4m_deepen_vector_test PRIVATE C4M_DEEPEN_VECTOR_CHAIN=1)
+
+# Cross-implementation known-zero-against-null conformance test (2026-11-09),
+# plus the real 1.0.21 file whose directories carry the legacy ten-dash null.
+add_executable(c4m_zero_null_vector_test c4m_zero_null_vector_test.cpp)
+target_link_libraries(c4m_zero_null_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_zero_null_vector_test PRIVATE
+    C4M_ZERO_NULL_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/zero-null-vector"
+    C4M_LEGACY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/legacy")
+catch_discover_tests(c4m_zero_null_vector_test)
