@@ -345,9 +345,14 @@ void Manifest::Canonicalize() {
                 break;
         }
 
-        // Empty directory: size is definitively 0.
+        // A directory with no listed children is empty (size 0) only when
+        // its ID says so: an empty listing hashes to the empty-content ID.
+        // A childless directory with no ID is one nobody read (a chmod 000
+        // directory in a scan, or a hand-written line): its size stays
+        // null, because 0 beside no ID would assert an emptiness nobody
+        // saw (SPECIFICATION.md "Empty and Unread Directories").
         if (kids.empty()) {
-            if (entry.size < 0)
+            if (entry.size < 0 && !entry.id.IsNil())
                 entry.size = 0;
             continue;
         }

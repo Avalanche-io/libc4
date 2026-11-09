@@ -98,28 +98,39 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
             return result;
         }
 
-        // Boundary: space followed by link operator, c4 prefix, or null marker
+        // Boundary: space(s) followed by link operator, c4 prefix, or null
+        // marker. Aligned (pretty) forms pad fields with runs of spaces,
+        // so the lookahead skips the whole run before testing; the name
+        // ends at the first space of the run.
         if (ch == ' ') {
-            std::string_view rest(line.data() + pos, n - pos);
-            if (rest.substr(0, 4) == " -> " ||
-                rest.substr(0, 4) == " <- " ||
-                rest.substr(0, 4) == " <> ")
+            size_t j = pos;
+            while (j < n && line[j] == ' ')
+                j++;
+            std::string_view rest(line.data() + j, n - j);
+            if (rest.empty()) {
+                // Trailing padding: the name ended at the first space.
+                result.raw = line.substr(raw_start, pos - raw_start);
+                return result;
+            }
+            if (rest.substr(0, 3) == "-> " ||
+                rest.substr(0, 3) == "<- " ||
+                rest.substr(0, 3) == "<> ")
             {
                 result.raw = line.substr(raw_start, pos - raw_start);
                 return result;
             }
-            // Hard link group: " ->N" where N is digit 1-9
-            if (rest.size() >= 4 && rest[1] == '-' && rest[2] == '>' &&
-                rest[3] >= '1' && rest[3] <= '9')
+            // Hard link group: "->N" where N is digit 1-9
+            if (rest.size() >= 3 && rest[0] == '-' && rest[1] == '>' &&
+                rest[2] >= '1' && rest[2] <= '9')
             {
                 result.raw = line.substr(raw_start, pos - raw_start);
                 return result;
             }
-            if (rest.size() > 2 && rest[1] == 'c' && rest[2] == '4') {
+            if (rest.size() >= 2 && rest[0] == 'c' && rest[1] == '4') {
                 result.raw = line.substr(raw_start, pos - raw_start);
                 return result;
             }
-            if (rest.size() >= 2 && rest[1] == '-' && (rest.size() == 2 || rest[2] == ' ')) {
+            if (rest[0] == '-' && (rest.size() == 1 || rest[1] == ' ')) {
                 result.raw = line.substr(raw_start, pos - raw_start);
                 return result;
             }
@@ -289,10 +300,11 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
                                  ": line too short");
     }
 
+    // "-" is null (0); every ten-character mode is known, "----------"
+    // included (ZeroMode).
     uint32_t mode = 0;
-    if (mode_str != "-" && mode_str != "----------") {
+    if (mode_str != "-")
         mode = ParseMode(mode_str);
-    }
 
     Entry entry;
     entry.mode = mode;
@@ -321,8 +333,28 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
             if (pos < content.size() && content[pos] == ' ')
                 pos++;
         } else {
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": cannot parse timestamp");
+            // Pretty format: five space-separated fields, e.g.
+            // "Jan  2 03:04:05 2026 UTC" (Go's pretty encoder). The
+            // fields are taken from the line as written; the rest of the
+            // line is parsed in place, so names keep their bytes.
+            size_t p = pos;
+            int fields = 0;
+            while (fields < 5) {
+                while (p < content.size() && content[p] == ' ')
+                    p++;
+                if (p >= content.size())
+                    break;
+                while (p < content.size() && content[p] != ' ')
+                    p++;
+                fields++;
+            }
+            if (fields < 5)
+                throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                         ": cannot parse timestamp");
+            ts_str = content.substr(pos, p - pos);
+            pos = p;
+            if (pos < content.size() && content[pos] == ' ')
+                pos++;
         }
     }
     entry.timestamp = ParseTimestamp(ts_str);
@@ -362,6 +394,14 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
 
     auto name_result = parseNameOrTarget(content, pos, true);
     entry.name = UnsafeName(name_result.value);
+
+    // Ten dashes on a directory can only be a legacy null: a correct
+    // encoder writes a zero-permission directory as "d---------", and
+    // earlier pretty encoders wrote null as ten dashes.
+    if (mode_str == "----------" && !entry.name.empty() && entry.name.back() == '/') {
+        mode = 0;
+        entry.mode = 0;
+    }
 
     // Check for sequence notation in raw name
     if (hasUnescapedSequenceNotation(name_result.raw)) {

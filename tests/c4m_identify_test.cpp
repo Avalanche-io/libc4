@@ -146,16 +146,22 @@ TEST_CASE("IdentifyC4mAware: different indentation widths produce same ID", "[c4
     REQUIRE(id_2 == id_4);
 }
 
-TEST_CASE("IdentifyC4mAware: null mode forms produce same ID", "[c4m][identify]") {
-    // Null mode as single dash (canonical input)
+TEST_CASE("IdentifyC4mAware: null mode and known zero mode differ", "[c4m][identify]") {
+    // "-" is null; "----------" is the known zero (a regular file with no
+    // permission bits). They are different values, so the manifests they
+    // describe have different IDs (C4M-STANDARD 4.1).
     std::string dash = "- - - test.txt -\n";
-
-    // Null mode as ten dashes (display format input)
     std::string ten_dash = "---------- - - test.txt -\n";
 
     auto id_dash = c4::ID::IdentifyC4mAware(dash);
     auto id_ten = c4::ID::IdentifyC4mAware(ten_dash);
-    REQUIRE(id_dash == id_ten);
+    REQUIRE(id_dash != id_ten);
+}
+
+TEST_CASE("IdentifyC4mAware: ten dashes on a directory line is a legacy null", "[c4m][identify]") {
+    std::string dash = "- - - d/ -\n";
+    std::string ten_dash = "---------- - - d/ -\n";
+    REQUIRE(c4::ID::IdentifyC4mAware(dash) == c4::ID::IdentifyC4mAware(ten_dash));
 }
 
 TEST_CASE("IdentifyC4mAware: unsorted entries produce same ID as sorted", "[c4m][identify]") {

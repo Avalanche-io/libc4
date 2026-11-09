@@ -60,7 +60,10 @@ bool Entry::IsSymlink() const {
 }
 
 bool Entry::HasNullValues() const {
-    bool null_mode = (mode == 0 && !IsDir() && !IsSymlink());
+    // mode == 0 is null; the known zero is ZeroMode. Directory-ness comes
+    // from the trailing "/" in the name, so a null-mode directory is still
+    // a null.
+    bool null_mode = IsNullMode(mode);
     bool null_ts = (timestamp == NullTimestamp);
     bool null_sz = (size < 0);
     return null_mode || null_ts || null_sz;
@@ -136,7 +139,8 @@ uint32_t ParseMode(const std::string &s) {
     if (s[6] == 's' || s[6] == 'S') mode |= ModeSetgid;
     if (s[9] == 't' || s[9] == 'T') mode |= ModeSticky;
 
-    return mode;
+    // A ten-character mode is always known; all-zero is ZeroMode, not null.
+    return KnownMode(mode);
 }
 
 std::string FormatTimestamp(int64_t ts) {
@@ -204,6 +208,50 @@ int64_t ParseTimestamp(const std::string &s) {
         return base;
     }
 
+    // Pretty format, as Go's pretty encoder writes it:
+    // "Jan  2 15:04:05 2006 MST" or "Jan 2 15:04:05 2006 -0700".
+    // The zone is UTC, GMT or Z (offset 0) or a numeric ±HHMM offset. Any
+    // other abbreviation is ambiguous and is rejected rather than guessed:
+    // a wrong offset would be an invented value that changes the ID.
+    {
+        char mon[4] = {0};
+        char zone[8] = {0};
+        if (std::sscanf(s.c_str(), "%3s %d %d:%d:%d %d %7s",
+                        mon, &day, &hour, &minute, &second, &year, zone) == 7) {
+            static const char *const months[12] = {
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+            month = 0;
+            for (int i = 0; i < 12; i++) {
+                if (std::strcmp(mon, months[i]) == 0) { month = i + 1; break; }
+            }
+            if (month == 0)
+                throw std::invalid_argument("cannot parse timestamp: " + s);
+
+            struct tm t{};
+            t.tm_year = year - 1900;
+            t.tm_mon = month - 1;
+            t.tm_mday = day;
+            t.tm_hour = hour;
+            t.tm_min = minute;
+            t.tm_sec = second;
+#ifdef _WIN32
+            int64_t base = static_cast<int64_t>(_mkgmtime(&t));
+#else
+            int64_t base = static_cast<int64_t>(timegm(&t));
+#endif
+            std::string z(zone);
+            if (z == "UTC" || z == "GMT" || z == "Z")
+                return base;
+            if (z.size() == 5 && (z[0] == '+' || z[0] == '-') &&
+                std::sscanf(z.c_str() + 1, "%2d%2d", &tz_h, &tz_m) == 2) {
+                int offset_sec = (tz_h * 3600 + tz_m * 60);
+                return (z[0] == '+') ? base - offset_sec : base + offset_sec;
+            }
+            throw std::invalid_argument("cannot parse timestamp: unknown zone in " + s);
+        }
+    }
+
     throw std::invalid_argument("cannot parse timestamp: " + s);
 }
 
@@ -212,9 +260,9 @@ int64_t ParseTimestamp(const std::string &s) {
 std::string Entry::Canonical() const {
     std::string line;
 
-    // Mode: null renders as single "-"
-    bool is_null_mode = (mode == 0 && !IsDir() && !IsSymlink());
-    if (is_null_mode)
+    // Mode: null renders as single "-"; the known zero (ZeroMode) as
+    // "----------". Directory-ness comes from the trailing "/" in name.
+    if (IsNullMode(mode))
         line += '-';
     else
         line += FormatMode(mode);
@@ -260,15 +308,15 @@ std::string Entry::Canonical() const {
     return line;
 }
 
-// Format (display): null mode is "----------", includes indentation.
+// Format (display): includes indentation. Null mode is "-" here as in
+// canonical form; the known zero is "----------". Writing null as ten
+// dashes in display form conflated the two (C4M-STANDARD §4.1).
 // C4 ID or "-" is always the last field.
 std::string Entry::Format(int indent_width) const {
     std::string line(static_cast<size_t>(depth * indent_width), ' ');
 
-    // Mode: null renders as "----------" in display format
-    bool is_null_mode = (mode == 0 && !IsDir() && !IsSymlink());
-    if (is_null_mode)
-        line += "----------";
+    if (IsNullMode(mode))
+        line += '-';
     else
         line += FormatMode(mode);
 

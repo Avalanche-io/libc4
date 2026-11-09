@@ -34,6 +34,23 @@ constexpr uint32_t ModeTypeMask   = ModeDir | ModeSymlink | ModeDevice |
                                      ModeNamedPipe | ModeSocket | ModeCharDevice;
 constexpr uint32_t ModePermMask   = 0777;
 
+// ZeroMode is the known zero mode: a regular file with no permission
+// bits, written "----------". It is not the null mode, which is 0 and is
+// written "-". The two differ for progressive resolution: null means not
+// yet checked, zero means checked and found zero. Bit 18 is set by no
+// operating system mode and is outside ModeTypeMask and ModePermMask, so
+// ZeroMode acts as mode 0 everywhere a mode is applied. (Mirrors Go
+// c4m.ZeroMode.)
+constexpr uint32_t ZeroMode = 1u << 18;
+
+// KnownMode returns m as a known mode: a mode read from disk or decoded
+// from a ten-character field is never null, so an all-zero mode becomes
+// ZeroMode.
+constexpr uint32_t KnownMode(uint32_t m) { return m == 0 ? ZeroMode : m; }
+
+// IsNullMode reports whether m is the null (unspecified) mode.
+constexpr bool IsNullMode(uint32_t m) { return m == 0; }
+
 // Null sentinel: timestamp 0 (Unix epoch) means "unspecified"
 constexpr int64_t NullTimestamp = 0;
 // Null sentinel: size -1 means "unspecified"
@@ -49,7 +66,7 @@ enum class FlowDirection {
 
 // A single entry in a .c4m manifest.
 struct Entry {
-    uint32_t mode = 0;         // Unix file mode (type + permission bits)
+    uint32_t mode = 0;         // Unix file mode (type + permission bits); 0 = null, ZeroMode = known zero
     int64_t timestamp = 0;     // Modification time (Unix seconds UTC), 0 = null
     int64_t size = 0;          // File size in bytes, -1 = null
     std::string name;          // File or directory name (dirs end with '/')
@@ -76,11 +93,14 @@ struct Entry {
     std::string FlowOperator() const;
 
     // Format as canonical c4m line (no indentation, no trailing newline).
-    // Null mode renders as "-" (single dash).
+    // Null mode renders as "-" (single dash); the known zero (ZeroMode)
+    // as "----------".
     std::string Canonical() const;
 
     // Format with indentation (no trailing newline).
-    // Null mode renders as "----------" in display format.
+    // Null mode renders as "-" here too; the known zero as "----------".
+    // Earlier encoders wrote null as ten dashes in display form, which
+    // conflated the two (C4M-STANDARD §4.1).
     std::string Format(int indent_width = 2) const;
 };
 
@@ -293,7 +313,10 @@ MergeResult Merge(const Manifest &base, const Manifest &local, const Manifest &r
 // "file2.txt" < "file10.txt"
 bool NaturalLess(const std::string &a, const std::string &b);
 
-// Mode string conversion
+// Mode string conversion. ParseMode takes a ten-character mode and always
+// returns a known mode ("----------" gives ZeroMode); the single-dash null
+// is the decoder's business, not ParseMode's. FormatMode ignores the
+// ZeroMode bit, so ZeroMode formats as "----------".
 std::string FormatMode(uint32_t mode);
 uint32_t ParseMode(const std::string &s);
 

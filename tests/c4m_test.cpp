@@ -186,7 +186,7 @@ TEST_CASE("C4M: canonical null mode is single dash", "[c4m][entry]") {
     REQUIRE(canonical.find("----------") == std::string::npos);
 }
 
-TEST_CASE("C4M: display null mode is ten dashes", "[c4m][entry]") {
+TEST_CASE("C4M: display null mode is a single dash", "[c4m][entry]") {
     c4m::Entry e;
     e.mode = 0;
     e.timestamp = 0;
@@ -194,8 +194,46 @@ TEST_CASE("C4M: display null mode is ten dashes", "[c4m][entry]") {
     e.name = "unknown.txt";
 
     std::string display = e.Format(0);
-    // Format (display): null mode is "----------"
-    REQUIRE(display.find("----------") != std::string::npos);
+    // Null is "-" in every form; ten dashes is the known zero
+    // (C4M-STANDARD 4.1), so display must not write it for null.
+    REQUIRE(display.substr(0, 2) == "- ");
+    REQUIRE(display.find("----------") == std::string::npos);
+}
+
+TEST_CASE("C4M: known zero mode is ten dashes in both forms", "[c4m][entry]") {
+    c4m::Entry e;
+    e.mode = c4m::ZeroMode;
+    e.timestamp = 0;
+    e.size = 4;
+    e.name = "zero.txt";
+
+    REQUIRE(e.Canonical().substr(0, 11) == "---------- ");
+    REQUIRE(e.Format(0).substr(0, 11) == "---------- ");
+    REQUIRE(c4m::FormatMode(c4m::ZeroMode) == "----------");
+    REQUIRE(c4m::ParseMode("----------") == c4m::ZeroMode);
+    REQUIRE(c4m::ParseMode("d---------") == c4m::ModeDir);
+    REQUIRE((c4m::ZeroMode & c4m::ModePermMask) == 0);
+    REQUIRE((c4m::ZeroMode & c4m::ModeTypeMask) == 0);
+}
+
+TEST_CASE("C4M: HasNullValues sees a null mode, not a known zero", "[c4m][entry]") {
+    c4m::Entry null_mode;
+    null_mode.mode = 0;
+    null_mode.timestamp = 1;
+    null_mode.size = 4;
+    null_mode.name = "nullmode.txt";
+    REQUIRE(null_mode.HasNullValues());
+
+    c4m::Entry zero_mode = null_mode;
+    zero_mode.mode = c4m::ZeroMode;
+    REQUIRE_FALSE(zero_mode.HasNullValues());
+
+    // A directory with a null mode is still a null (directory-ness comes
+    // from the trailing "/", not from the mode).
+    c4m::Entry null_dir = null_mode;
+    null_dir.name = "d/";
+    REQUIRE(null_dir.HasNullValues());
+    REQUIRE(null_dir.Canonical().substr(0, 2) == "- ");
 }
 
 TEST_CASE("C4M: null C4 ID always emitted as dash", "[c4m][entry]") {
@@ -618,12 +656,44 @@ TEST_CASE("C4M: parse with null values", "[c4m][parser]") {
     REQUIRE(e.name == "unknown.txt");
 }
 
-TEST_CASE("C4M: parse with ten-dash null mode", "[c4m][parser]") {
-    // Display format null mode is "----------"
-    std::string input = "---------- - - unknown.txt -\n";
+TEST_CASE("C4M: parse ten-dash mode as the known zero", "[c4m][parser]") {
+    // "----------" is a regular file with zero permissions: known, not null
+    // (C4M-STANDARD 4.1). It must re-encode as ten dashes.
+    std::string input = "---------- - - zero.txt -\n";
+    auto m = c4m::Manifest::Parse(input);
+    REQUIRE(m.EntryCount() == 1);
+    REQUIRE(m.Entries()[0].mode == c4m::ZeroMode);
+    REQUIRE_FALSE(c4m::IsNullMode(m.Entries()[0].mode));
+    REQUIRE(m.Entries()[0].Canonical() == "---------- - - zero.txt -");
+    REQUIRE(m.Encode() == input);
+}
+
+TEST_CASE("C4M: parse d--------- as a known directory mode", "[c4m][parser]") {
+    std::string input = "d--------- - - locked/ -\n";
+    auto m = c4m::Manifest::Parse(input);
+    REQUIRE(m.EntryCount() == 1);
+    REQUIRE(m.Entries()[0].mode == c4m::ModeDir);
+    REQUIRE_FALSE(c4m::IsNullMode(m.Entries()[0].mode));
+    REQUIRE(m.Entries()[0].IsDir());
+    REQUIRE(m.Encode() == input);
+}
+
+TEST_CASE("C4M: ten dashes on a directory line is a legacy null", "[c4m][parser]") {
+    // Only old pretty encoders wrote this; a zero-permission directory is
+    // "d---------". The decoder reads it as null and re-encodes it as "-".
+    std::string input = "---------- - - d/ -\n";
     auto m = c4m::Manifest::Parse(input);
     REQUIRE(m.EntryCount() == 1);
     REQUIRE(m.Entries()[0].mode == 0);
+    REQUIRE(c4m::IsNullMode(m.Entries()[0].mode));
+    REQUIRE(m.Encode() == "- - - d/ -\n");
+}
+
+TEST_CASE("C4M: null mode round-trips as a single dash in display form", "[c4m][parser]") {
+    std::string input = "- - - unknown.txt -\n";
+    auto m = c4m::Manifest::Parse(input);
+    REQUIRE(m.Entries()[0].mode == 0);
+    REQUIRE(m.Encode() == input);
 }
 
 TEST_CASE("C4M: parse with comma-formatted size", "[c4m][parser]") {
@@ -1328,16 +1398,37 @@ TEST_CASE("C4M: Canonicalize nil-infectious size", "[c4m][tree]") {
 }
 
 TEST_CASE("C4M: Canonicalize empty dir size is zero", "[c4m][tree]") {
+    // A childless directory is empty (size 0) only when its ID says so:
+    // an empty listing hashes to the empty-content ID
+    // (SPECIFICATION.md "Empty and Unread Directories").
     c4m::Manifest m;
     c4m::Entry dir;
     dir.name = "empty/"; dir.mode = c4m::ModeDir | 0755;
     dir.size = -1; dir.timestamp = 0; dir.depth = 0;
+    dir.id = c4::ID::Parse(
+        "c459dsjfscH38cYeXXYogktxf4Cd9ibshE3BHUo6a58hBXmRQdZrAkZzsWcbWtDg5oQstpDuni4Hirj75GEmTc1sFT");
 
     m.AddEntry(dir);
     m.Canonicalize();
 
     // An empty directory has known size 0, not null
     REQUIRE(m.Entries()[0].size == 0);
+}
+
+TEST_CASE("C4M: Canonicalize unread dir keeps a null size", "[c4m][tree]") {
+    // A childless directory with no ID is one nobody read (a chmod 000
+    // directory in a scan, or a hand-written line). Writing 0 would assert
+    // an emptiness nobody saw, so the size stays null.
+    c4m::Manifest m;
+    c4m::Entry dir;
+    dir.name = "unread/"; dir.mode = c4m::ModeDir;
+    dir.size = -1; dir.timestamp = 0; dir.depth = 0;
+
+    m.AddEntry(dir);
+    m.Canonicalize();
+
+    REQUIRE(m.Entries()[0].size == c4m::NullSize);
+    REQUIRE(m.Entries()[0].id.IsNil());
 }
 
 TEST_CASE("C4M: ComputeC4ID is deterministic", "[c4m][tree]") {

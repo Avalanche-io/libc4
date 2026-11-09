@@ -464,17 +464,19 @@ static Entry parseEntryLine(const std::string &line, int indent_width) {
     if (content.empty())
         throw std::runtime_error("c4m: empty entry line");
 
-    // Parse mode
+    // Parse mode: "-" is null (0); every ten-character mode is known,
+    // "----------" included (ZeroMode).
     size_t pos = 0;
     uint32_t mode = 0;
+    std::string mode_str;
 
     if (content.size() >= 2 && content[0] == '-' && content[1] == ' ') {
         // Null mode (single dash)
+        mode_str = "-";
         pos = 2;
     } else if (content.size() >= 11) {
-        std::string mode_str = content.substr(0, 10);
-        if (mode_str != "-" && mode_str != "----------")
-            mode = ParseMode(mode_str);
+        mode_str = content.substr(0, 10);
+        mode = ParseMode(mode_str);
         pos = 11;
     } else {
         throw std::runtime_error("c4m: entry line too short");
@@ -587,6 +589,12 @@ static Entry parseEntryLine(const std::string &line, int indent_width) {
         entry.name = content.substr(start);
     }
 name_done:
+
+    // Ten dashes on a directory can only be a legacy null: a correct
+    // encoder writes a zero-permission directory as "d---------", and
+    // earlier pretty encoders wrote null as ten dashes.
+    if (mode_str == "----------" && !entry.name.empty() && entry.name.back() == '/')
+        entry.mode = 0;
 
     skip();
 
