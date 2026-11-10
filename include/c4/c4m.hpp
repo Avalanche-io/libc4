@@ -280,6 +280,14 @@ PatchResult PatchDiff(const Manifest &old_m, const Manifest &new_m);
 // children under it = removal (entry and subtree); identical directory with
 // children under it = deepening (entry kept, children applied recursively);
 // otherwise replace; new path = addition.
+//
+// A patch is meaningful only over its own base. Because removal is spelled
+// by exact restatement, applying a patch to any other tree reads an addition
+// that meets an identical entry as a removal. To carry a patch's changes to
+// another tree, read each entry against the patch's base first, then apply
+// what it means; the rule and the shared conformance vectors are in c4 core
+// (c4m/testdata/apply-from-vector). Not implemented here until a caller
+// needs it.
 Manifest ApplyPatch(const Manifest &base, const Manifest &patch);
 
 // Diff compares two manifests and returns categorized results.
