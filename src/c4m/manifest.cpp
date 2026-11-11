@@ -328,17 +328,19 @@ void Manifest::Canonicalize() {
                 break;
         }
 
-        // A childless directory with a C4 ID other than the empty listing's
-        // is collapsed: its listing lives under that ID, not here, so its
-        // size cannot be derived and stays null. Through 1.0.26 any
-        // childless directory gave 0, an invented value ComputeC4ID then
-        // hashed (childless-dir vector). On this line a childless directory
-        // with no ID still gives 0, as the Go reference's 1.0.x line does;
-        // main keeps that size null, a known 1.0.x difference the vector's
-        // unread/ pins.
+        // A directory with no listed children is empty (size 0) only when
+        // its ID says so: an empty listing hashes to the empty-content ID.
+        // A childless directory with no ID is one nobody read (a
+        // hand-written line, or another tool's output): its size stays
+        // null, because 0 beside no ID would assert an emptiness nobody
+        // saw. A childless directory with any other ID is collapsed: its
+        // listing lives under that ID, not here, so its size cannot be
+        // derived and stays null. Through 1.0.26 every childless directory
+        // gave 0, an invented value ComputeC4ID then hashed (childless-dir
+        // vector).
         if (kids.empty()) {
             static const c4::ID empty_listing_id = c4::ID::Identify(std::string_view(""));
-            if (entry.size < 0 && (entry.id.IsNil() || entry.id == empty_listing_id))
+            if (entry.size < 0 && entry.id == empty_listing_id)
                 entry.size = 0;
             continue;
         }

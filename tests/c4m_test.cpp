@@ -1328,16 +1328,37 @@ TEST_CASE("C4M: Canonicalize nil-infectious size", "[c4m][tree]") {
 }
 
 TEST_CASE("C4M: Canonicalize empty dir size is zero", "[c4m][tree]") {
+    // A childless directory is empty (size 0) only when its ID says so:
+    // an empty listing hashes to the empty-content ID
+    // (SPECIFICATION.md "Empty and Unread Directories").
     c4m::Manifest m;
     c4m::Entry dir;
     dir.name = "empty/"; dir.mode = c4m::ModeDir | 0755;
     dir.size = -1; dir.timestamp = 0; dir.depth = 0;
+    dir.id = c4::ID::Parse(
+        "c459dsjfscH38cYeXXYogktxf4Cd9ibshE3BHUo6a58hBXmRQdZrAkZzsWcbWtDg5oQstpDuni4Hirj75GEmTc1sFT");
 
     m.AddEntry(dir);
     m.Canonicalize();
 
     // An empty directory has known size 0, not null
     REQUIRE(m.Entries()[0].size == 0);
+}
+
+TEST_CASE("C4M: Canonicalize unread dir keeps a null size", "[c4m][tree]") {
+    // A childless directory with no ID is one nobody read (a chmod 000
+    // directory in a scan, or a hand-written line). Writing 0 would assert
+    // an emptiness nobody saw, so the size stays null.
+    c4m::Manifest m;
+    c4m::Entry dir;
+    dir.name = "unread/"; dir.mode = c4m::ModeDir;
+    dir.size = -1; dir.timestamp = 0; dir.depth = 0;
+
+    m.AddEntry(dir);
+    m.Canonicalize();
+
+    REQUIRE(m.Entries()[0].size == c4m::NullSize);
+    REQUIRE(m.Entries()[0].id.IsNil());
 }
 
 TEST_CASE("C4M: ComputeC4ID is deterministic", "[c4m][tree]") {
