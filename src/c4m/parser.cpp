@@ -99,6 +99,18 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
             result.has_unescaped_brackets = true;
         }
 
+        // A double quote is written \" in a name, and a control byte is
+        // encoded by SafeName, so a raw one never comes from a conforming
+        // writer: it is damage, refused rather than read into the name
+        // (name-escape vector). parseEntryFromLine names the line.
+        if (is_name && ch == '"')
+            throw std::invalid_argument("name holds a raw '\"' (written \\\" in a name)");
+        if (is_name && static_cast<unsigned char>(ch) < 0x20) {
+            char hex[8];
+            std::snprintf(hex, sizeof hex, "0x%02X", static_cast<unsigned char>(ch));
+            throw std::invalid_argument(std::string("name holds a raw control byte ") + hex + " (SafeName encodes it)");
+        }
+
         // A "/" ends a directory's name, and only where the field ends with
         // it. Anything after it but a space is part of the name, which then
         // holds a "/" and is refused with its line once decoded. Before, the
@@ -147,6 +159,15 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
                 result.raw = line.substr(raw_start, pos - raw_start);
                 return result;
             }
+            // A space that is not a field boundary would be part of the
+            // name, but a name's space is written "\ ": an unescaped one is
+            // damage, often a damaged C4 ID field that would otherwise join
+            // the name.
+            if (is_name)
+                throw std::invalid_argument("name '" + result.value + " " +
+                                            std::string(rest.substr(0, rest.find(' '))) +
+                                            "' holds an unescaped space (written \"\\ \" in a name), "
+                                            "or its C4 ID field is damaged");
         }
 
         result.value += ch;
