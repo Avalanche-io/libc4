@@ -100,4 +100,6 @@ TEST_CASE("name-rule vector: a backslash is a literal name character", "[c4m][ve
     m.AddEntry(entryNamed("a\\b.txt"));
     CHECK_NOTHROW(m.Encode());
     CHECK_FALSE(m.ComputeC4ID().IsNil());
+    // Through 1.0.26 Validate counted a backslash as a path separator.
+    CHECK_NOTHROW(m.Validate());
 }
