@@ -15,4 +15,13 @@ namespace c4m::detail {
 // does not parse throws std::runtime_error naming line_num.
 Entry parseEntryFromLine(const std::string &line, int &indent_width, int line_num);
 
+// True if name is a path, not a bare entry name. Only "/" separates paths
+// in c4m, and a name may end in "/" only as a directory's marker: a name
+// holding any other "/", and ".", "..", "./", "../", "/" and "", are path
+// components (SPECIFICATION.md "Invalid names"; the shared name-rule
+// vector). A backslash is a literal name character, never a separator.
+// Go: c4m.isPathName. The one definition, used by the parser, the encoder
+// and Manifest.
+bool isPathName(const std::string &name);
+
 } // namespace c4m::detail

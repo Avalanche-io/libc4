@@ -83,3 +83,9 @@ target_link_libraries(c4m_childless_dir_vector_test PRIVATE c4 Catch2::Catch2Wit
 target_compile_definitions(c4m_childless_dir_vector_test PRIVATE
     C4M_CHILDLESS_DIR_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/childless-dir-vector")
 catch_discover_tests(c4m_childless_dir_vector_test)
+
+add_executable(c4m_name_rule_vector_test c4m_name_rule_vector_test.cpp)
+target_link_libraries(c4m_name_rule_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_name_rule_vector_test PRIVATE
+    C4M_NAME_RULE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/name-rule-vector")
+catch_discover_tests(c4m_name_rule_vector_test)
