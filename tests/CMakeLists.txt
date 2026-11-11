@@ -60,3 +60,9 @@ target_link_libraries(c4m_empty_tree_vector_test PRIVATE c4 Catch2::Catch2WithMa
 target_compile_definitions(c4m_empty_tree_vector_test PRIVATE
     C4M_EMPTY_TREE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/empty-tree-vector")
 catch_discover_tests(c4m_empty_tree_vector_test)
+
+add_executable(c4m_pretty_refused_test c4m_pretty_refused_test.cpp)
+target_link_libraries(c4m_pretty_refused_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_pretty_refused_test PRIVATE
+    C4M_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+catch_discover_tests(c4m_pretty_refused_test)

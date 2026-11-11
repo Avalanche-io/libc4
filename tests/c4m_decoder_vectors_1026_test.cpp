@@ -188,5 +188,7 @@ TEST_CASE("1.0.x: every pretty vector file is refused, naming a line", "[c4m][ve
         err = e.what();
     }
     CHECK(err.find("c4m: line ") != std::string::npos);
-    CHECK(err.find("cannot parse timestamp") != std::string::npos);
+    // Refused at its first padded line (the padding refusal), before any
+    // stated timestamp is reached (c4m_pretty_refused_test.cpp).
+    CHECK(err.find("padded fields") != std::string::npos);
 }

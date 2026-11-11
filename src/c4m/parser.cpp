@@ -307,6 +307,26 @@ static Entry parseEntryFields(const std::string &line, int &indent_width, int li
 
     // Content after indentation
     std::string content = line.substr(indent);
+
+    // This line of libc4 reads the canonical form only: one space between
+    // fields. A run of unescaped spaces is the pretty form's column padding,
+    // which it refuses, naming the line, rather than read: through 1.0.25 a
+    // pretty line with a null timestamp parsed, and the padding became part
+    // of the name and the link or flow target (unicode-name vector's
+    // pretty.c4m). An escaped space ("\ ", part of a name) followed by the
+    // field separator is not padding.
+    for (size_t i = 0; i + 1 < content.size(); i++) {
+        if (content[i] != ' ' || content[i + 1] != ' ')
+            continue;
+        size_t backslashes = 0;
+        for (size_t j = i; j > 0 && content[j - 1] == '\\'; j--)
+            backslashes++;
+        if (backslashes % 2 == 1)
+            continue; // content[i] is an escaped space; content[i+1] separates
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": padded fields (the pretty form) are not read by this release line; "
+                                 "a run of spaces between fields is refused");
+    }
     if (content.empty())
         throw std::runtime_error("c4m: line " + std::to_string(line_num) +
                                  ": empty entry");
