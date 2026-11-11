@@ -3,6 +3,7 @@
 // Matches Go reference: github.com/Avalanche-io/c4/c4m/encoder.go
 
 #include "c4/c4m.hpp"
+#include "entry_line.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -13,6 +14,13 @@
 namespace c4m {
 
 std::string Manifest::Encode() const {
+    // A name the format forbids is never written: every decoder refuses such
+    // a line (name-rule vector). Refused before anything is produced.
+    for (const auto &e : entries_) {
+        if (detail::isPathName(e.name))
+            throw std::runtime_error("c4m: path traversal: name '" + e.name +
+                                     "' is a path, not an entry name (only a directory's trailing / is allowed)");
+    }
     // Hierarchical sort: Copy + SortEntries preserves depth-first tree structure.
     Manifest copy = Copy();
     copy.SortEntries();

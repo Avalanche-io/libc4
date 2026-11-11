@@ -99,8 +99,12 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
             result.has_unescaped_brackets = true;
         }
 
-        // Directory name ends at / (inclusive)
-        if (is_name && ch == '/') {
+        // A "/" ends a directory's name, and only where the field ends with
+        // it. Anything after it but a space is part of the name, which then
+        // holds a "/" and is refused with its line once decoded. Before, the
+        // name was cut at its first "/" and the rest of the line, C4 ID
+        // included, dropped (name-rule vector).
+        if (is_name && ch == '/' && (pos + 1 >= line.size() || line[pos + 1] == ' ')) {
             result.value += '/';
             pos++;
             result.raw = line.substr(raw_start, pos - raw_start);
@@ -425,6 +429,11 @@ static Entry parseEntryFields(const std::string &line, int &indent_width, int li
 
     auto name_result = parseNameOrTarget(content, pos, true);
     entry.name = UnsafeName(name_result.value);
+    // A name is a bare entry name, checked once decoded, so an escaped "/"
+    // is refused as surely as a raw one (name-rule vector).
+    if (detail::isPathName(entry.name))
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) + ": name '" + entry.name +
+                                 "' is a path, not an entry name (only a directory's trailing / is allowed)");
 
     // Check for sequence notation in raw name
     if (hasUnescapedSequenceNotation(name_result.raw)) {
@@ -528,6 +537,21 @@ Entry parseEntryFromLine(const std::string &line, int &indent_width, int line_nu
     } catch (const std::logic_error &e) {
         throw std::runtime_error("c4m: line " + std::to_string(line_num) + ": " + e.what());
     }
+}
+
+bool isPathName(const std::string &name) {
+    if (name.empty())
+        return true;
+    std::string base = name;
+    if (base.back() == '/')
+        base.pop_back();
+    if (base.empty() || base == "." || base == "..")
+        return true;
+    for (char c : base) {
+        if (c == '/' || c == '\0')
+            return true;
+    }
+    return false;
 }
 
 } // namespace detail

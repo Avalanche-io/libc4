@@ -2,6 +2,7 @@
 // C4M manifest: tree index, navigation, sorting, validation, ID computation.
 
 #include "c4/c4m.hpp"
+#include "entry_line.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -13,25 +14,7 @@
 
 namespace c4m {
 
-// --------------------------------------------------------------------
-// isPathName: true if name contains path semantics (not a bare filename).
-// --------------------------------------------------------------------
-static bool isPathName(const std::string &name) {
-    if (name.empty())
-        return true;
-    std::string base = name;
-    if (base.back() == '/')
-        base.pop_back();
-    if (base.empty())
-        return true;
-    if (base == "." || base == "..")
-        return true;
-    for (char c : base) {
-        if (c == '/' || c == '\\' || c == '\0')
-            return true;
-    }
-    return false;
-}
+using detail::isPathName;
 
 // --------------------------------------------------------------------
 // globMatch: simple glob supporting * and ?
@@ -384,7 +367,14 @@ void Manifest::Canonicalize() {
 // ComputeC4ID
 // ====================================================================
 
+// A manifest holding a name the format forbids, at any depth, has no C4 ID:
+// no conforming c4m text exists to hash. It gets the nil ID, the format's
+// "unavailable", as in Go.
 c4::ID Manifest::ComputeC4ID() const {
+    for (const auto &e : entries_) {
+        if (isPathName(e.name))
+            return c4::ID();
+    }
     Manifest copy = Copy();
     copy.Canonicalize();
     copy.SortEntries();

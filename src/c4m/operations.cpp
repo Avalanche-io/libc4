@@ -392,6 +392,12 @@ std::map<std::string, const Entry *> EntryPaths(const std::vector<Entry> &entrie
 // -----------------------------------------------------------------------
 
 std::string EncodePatch(const PatchResult &pr) {
+    // Refused before anything is written, as Manifest::Encode does.
+    for (const auto &e : pr.patch.Entries()) {
+        if (detail::isPathName(e.name))
+            throw std::runtime_error("c4m: path traversal: name '" + e.name +
+                                     "' is a path, not an entry name (only a directory's trailing / is allowed)");
+    }
     std::string out;
     out.reserve(4096);
 
