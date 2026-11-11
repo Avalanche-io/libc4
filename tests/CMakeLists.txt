@@ -76,3 +76,10 @@ target_link_libraries(c4m_empty_tree_vector_test PRIVATE c4 Catch2::Catch2WithMa
 target_compile_definitions(c4m_empty_tree_vector_test PRIVATE
     C4M_EMPTY_TREE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/empty-tree-vector")
 catch_discover_tests(c4m_empty_tree_vector_test)
+
+# Cross-implementation childless-directory conformance test (2026-11-11).
+add_executable(c4m_childless_dir_vector_test c4m_childless_dir_vector_test.cpp)
+target_link_libraries(c4m_childless_dir_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_childless_dir_vector_test PRIVATE
+    C4M_CHILDLESS_DIR_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/childless-dir-vector")
+catch_discover_tests(c4m_childless_dir_vector_test)

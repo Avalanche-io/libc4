@@ -350,9 +350,14 @@ void Manifest::Canonicalize() {
         // A childless directory with no ID is one nobody read (a chmod 000
         // directory in a scan, or a hand-written line): its size stays
         // null, because 0 beside no ID would assert an emptiness nobody
-        // saw (SPECIFICATION.md "Empty and Unread Directories").
+        // saw (SPECIFICATION.md "Empty and Unread Directories"). A
+        // childless directory with any other ID is collapsed: its listing
+        // lives under that ID, not here, so its size cannot be derived and
+        // stays null. Through 2026-11-11 any non-nil ID gave 0, an invented
+        // value ComputeC4ID then hashed (childless-dir vector).
         if (kids.empty()) {
-            if (entry.size < 0 && !entry.id.IsNil())
+            static const c4::ID empty_listing_id = c4::ID::Identify(std::string_view(""));
+            if (entry.size < 0 && entry.id == empty_listing_id)
                 entry.size = 0;
             continue;
         }
