@@ -401,8 +401,10 @@ c4::ID Manifest::ComputeC4ID() const {
             canonical += '\n';
         }
     }
-    if (canonical.empty())
-        return c4::ID();
+    // An empty listing is known to be empty, not unknown: its C4 ID is the
+    // C4 ID of its empty canonical text, as in every other implementation
+    // (empty-tree vector). The nil ID here made a patch from the empty tree
+    // name a base no other implementation could match.
     return c4::ID::Identify(canonical);
 }
 

@@ -69,3 +69,10 @@ target_link_libraries(c4m_decoder_vectors_1026_test PRIVATE c4 Catch2::Catch2Wit
 target_compile_definitions(c4m_decoder_vectors_1026_test PRIVATE
     C4M_VECTOR_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 catch_discover_tests(c4m_decoder_vectors_1026_test)
+
+# Cross-implementation empty-tree conformance test (2026-11-11).
+add_executable(c4m_empty_tree_vector_test c4m_empty_tree_vector_test.cpp)
+target_link_libraries(c4m_empty_tree_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_empty_tree_vector_test PRIVATE
+    C4M_EMPTY_TREE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/empty-tree-vector")
+catch_discover_tests(c4m_empty_tree_vector_test)
