@@ -6,3 +6,4 @@ tests/testdata/damaged-line-vector/* -text
 tests/testdata/empty-tree-vector/* -text
 tests/testdata/unicode-name-vector/* -text
 tests/testdata/name-rule-vector/* -text
+tests/testdata/name-escape-vector/* -text
