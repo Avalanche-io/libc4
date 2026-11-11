@@ -13,17 +13,16 @@
 namespace {
 
 // Format name for c4m output using backslash escaping (no quoting).
-// Applies SafeName encoding then c4m field-boundary escaping.
+// EscapeField applies SafeName encoding then c4m field-boundary escaping.
 // Directory names: escape the base then re-append the trailing /.
+// SafeName is applied once: applying it here as well escaped every
+// SafeName escape a second time, so "trail\" was written "trail\\\\" and
+// read back as "trail\\", a different name (backslash-name vector).
 std::string formatName(const std::string &name, bool is_sequence) {
-    std::string safe = c4m::SafeName(name);
+    if (!name.empty() && name.back() == '/')
+        return c4m::EscapeField(name.substr(0, name.size() - 1), false) + "/";
 
-    if (!name.empty() && name.back() == '/') {
-        std::string base = safe.substr(0, safe.size() - 1);
-        return c4m::EscapeField(base, false) + "/";
-    }
-
-    return c4m::EscapeField(safe, is_sequence);
+    return c4m::EscapeField(name, is_sequence);
 }
 
 // Format symlink target for c4m output.
@@ -125,6 +124,27 @@ uint32_t ParseMode(const std::string &s) {
         throw std::invalid_argument(std::string("unknown file type: ") + s[0]);
     }
 
+    // Each permission position holds its own letter or '-'; the owner- and
+    // group-execute positions may also carry s/S (setuid, setgid) and the
+    // other-execute position t/T (sticky). Any other character used to read
+    // as a clear bit, so a damaged mode became a different mode with no
+    // error (damaged-line vector).
+    for (int i = 0; i < 9; i++) {
+        char c = s[static_cast<size_t>(i) + 1];
+        bool ok = c == '-';
+        switch (i % 3) {
+        case 0: ok = ok || c == 'r'; break;
+        case 1: ok = ok || c == 'w'; break;
+        default:
+            ok = ok || c == 'x';
+            if (i == 8) ok = ok || c == 't' || c == 'T';
+            else ok = ok || c == 's' || c == 'S';
+        }
+        if (!ok)
+            throw std::invalid_argument(std::string("invalid permission character '") + c +
+                                        "' at position " + std::to_string(i + 2));
+    }
+
     if (s[1] == 'r') mode |= 0400;
     if (s[2] == 'w') mode |= 0200;
     if (s[3] == 'x' || s[3] == 's') mode |= 0100;
@@ -161,6 +181,32 @@ std::string FormatTimestamp(int64_t ts) {
     return buf;
 }
 
+// civilUTC converts a UTC civil time to Unix seconds, refusing a field out
+// of range. timegm normalises out-of-range fields (month 13, day 45 became
+// a date in the following year), so an impossible date read as a real one
+// with no error (damaged-line vector).
+static int64_t civilUTC(int year, int month, int day, int hour, int minute,
+                        int second, const std::string &s) {
+    static const int mdays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    int dim = (month >= 1 && month <= 12) ? mdays[month - 1] + (month == 2 && leap ? 1 : 0) : 0;
+    if (month < 1 || month > 12 || day < 1 || day > dim || hour < 0 || hour > 23 ||
+        minute < 0 || minute > 59 || second < 0 || second > 59)
+        throw std::invalid_argument("cannot parse timestamp: field out of range in " + s);
+    struct tm t{};
+    t.tm_year = year - 1900;
+    t.tm_mon = month - 1;
+    t.tm_mday = day;
+    t.tm_hour = hour;
+    t.tm_min = minute;
+    t.tm_sec = second;
+#ifdef _WIN32
+    return static_cast<int64_t>(_mkgmtime(&t));
+#else
+    return static_cast<int64_t>(timegm(&t));
+#endif
+}
+
 int64_t ParseTimestamp(const std::string &s) {
     if (s == "-" || s == "0")
         return NullTimestamp;
@@ -170,18 +216,7 @@ int64_t ParseTimestamp(const std::string &s) {
     if (s.back() == 'Z' &&
         std::sscanf(s.c_str(), "%d-%d-%dT%d:%d:%dZ",
                     &year, &month, &day, &hour, &minute, &second) == 6) {
-        struct tm t{};
-        t.tm_year = year - 1900;
-        t.tm_mon = month - 1;
-        t.tm_mday = day;
-        t.tm_hour = hour;
-        t.tm_min = minute;
-        t.tm_sec = second;
-#ifdef _WIN32
-        return static_cast<int64_t>(_mkgmtime(&t));
-#else
-        return static_cast<int64_t>(timegm(&t));
-#endif
+        return civilUTC(year, month, day, hour, minute, second, s);
     }
 
     int tz_h, tz_m;
@@ -190,18 +225,7 @@ int64_t ParseTimestamp(const std::string &s) {
                     &year, &month, &day, &hour, &minute, &second,
                     &tz_sign, &tz_h, &tz_m) == 9 &&
         (tz_sign == '+' || tz_sign == '-')) {
-        struct tm t{};
-        t.tm_year = year - 1900;
-        t.tm_mon = month - 1;
-        t.tm_mday = day;
-        t.tm_hour = hour;
-        t.tm_min = minute;
-        t.tm_sec = second;
-#ifdef _WIN32
-        int64_t base = static_cast<int64_t>(_mkgmtime(&t));
-#else
-        int64_t base = static_cast<int64_t>(timegm(&t));
-#endif
+        int64_t base = civilUTC(year, month, day, hour, minute, second, s);
         int offset_sec = (tz_h * 3600 + tz_m * 60);
         if (tz_sign == '+') base -= offset_sec;
         else base += offset_sec;
@@ -228,18 +252,7 @@ int64_t ParseTimestamp(const std::string &s) {
             if (month == 0)
                 throw std::invalid_argument("cannot parse timestamp: " + s);
 
-            struct tm t{};
-            t.tm_year = year - 1900;
-            t.tm_mon = month - 1;
-            t.tm_mday = day;
-            t.tm_hour = hour;
-            t.tm_min = minute;
-            t.tm_sec = second;
-#ifdef _WIN32
-            int64_t base = static_cast<int64_t>(_mkgmtime(&t));
-#else
-            int64_t base = static_cast<int64_t>(timegm(&t));
-#endif
+            int64_t base = civilUTC(year, month, day, hour, minute, second, s);
             std::string z(zone);
             if (z == "UTC" || z == "GMT" || z == "Z")
                 return base;

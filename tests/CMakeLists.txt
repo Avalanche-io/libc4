@@ -61,3 +61,11 @@ target_compile_definitions(c4m_zero_null_vector_test PRIVATE
     C4M_ZERO_NULL_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/zero-null-vector"
     C4M_LEGACY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/legacy")
 catch_discover_tests(c4m_zero_null_vector_test)
+
+# Cross-implementation conformance for the 1.0.26 decoder rules (link-target,
+# backslash-name and damaged-line vectors, 2026-11-10).
+add_executable(c4m_decoder_vectors_1026_test c4m_decoder_vectors_1026_test.cpp)
+target_link_libraries(c4m_decoder_vectors_1026_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_decoder_vectors_1026_test PRIVATE
+    C4M_VECTOR_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+catch_discover_tests(c4m_decoder_vectors_1026_test)

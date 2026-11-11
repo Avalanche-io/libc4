@@ -4,6 +4,7 @@
 // Format is entry-only: no header, no directives. Lines starting with @ are rejected.
 
 #include "c4/c4m.hpp"
+#include "entry_line.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -76,14 +77,22 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
     while (pos < n) {
         char ch = line[pos];
 
-        // Field-boundary backslash escapes
+        // A backslash always starts a two-byte escape. A c4m field-boundary
+        // escape (\<space>, \", \[, \]) becomes its literal; any other (a
+        // SafeName escape such as \\) passes through whole for UnsafeName,
+        // so its second byte never starts an escape of its own. A name
+        // ending in a backslash read back with its C4 ID swallowed before
+        // this (backslash-name vector).
         if (ch == '\\' && pos + 1 < n) {
             char next = line[pos + 1];
             if (next == ' ' || next == '"' || next == '[' || next == ']') {
                 result.value += next;
-                pos += 2;
-                continue;
+            } else {
+                result.value += ch;
+                result.value += next;
             }
+            pos += 2;
+            continue;
         }
 
         if (ch == '[' || ch == ']') {
@@ -144,6 +153,40 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
     return result;
 }
 
+// startsIDField reports whether the run of spaces at pos is followed by
+// the C4 ID field: a C4 ID, or the null "-" as the last field. The pretty
+// form pads before that field, so the whole run is skipped first.
+bool startsIDField(const std::string &line, size_t pos) {
+    while (pos < line.size() && line[pos] == ' ')
+        pos++;
+    std::string_view rest(line.data() + pos, line.size() - pos);
+    return rest.substr(0, 2) == "c4" || rest == "-" || rest.substr(0, 2) == "- ";
+}
+
+// isLoneIDField reports whether s, the rest of a line after a link
+// operator, is exactly one field that is a C4 ID or the null "-". A field
+// ends at an unescaped space.
+bool isLoneIDField(const std::string &s) {
+    if (s == "-")
+        return true;
+    if (s.size() < 2 || s[0] != 'c' || s[1] != '4')
+        return false;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\') {
+            i++;
+            continue;
+        }
+        if (s[i] == ' ')
+            return false;
+    }
+    try {
+        c4::ID::Parse(s);
+    } catch (const std::invalid_argument &) {
+        return false;
+    }
+    return true;
+}
+
 // Parse symlink target. Unlike name, '/' is NOT a boundary.
 std::string parseSymlinkTarget(const std::string &line, size_t &pos) {
     size_t n = line.size();
@@ -152,25 +195,25 @@ std::string parseSymlinkTarget(const std::string &line, size_t &pos) {
     while (pos < n) {
         char ch = line[pos];
 
-        // Backslash escapes for space and quote
+        // A backslash always starts a two-byte escape (as in names): space
+        // and quote become literals, any other passes through whole.
         if (ch == '\\' && pos + 1 < n) {
             char next = line[pos + 1];
             if (next == ' ' || next == '"') {
                 buf += next;
-                pos += 2;
-                continue;
+            } else {
+                buf += ch;
+                buf += next;
             }
+            pos += 2;
+            continue;
         }
 
-        if (ch == ' ') {
-            std::string_view rest(line.data() + pos, n - pos);
-            if (rest.size() > 2 && rest[1] == 'c' && rest[2] == '4') {
-                return buf;
-            }
-            if (rest.size() >= 2 && rest[1] == '-' && (rest.size() == 2 || rest[2] == ' ')) {
-                return buf;
-            }
-        }
+        // The pretty form pads before the C4 ID field; testing only the
+        // next character let that padding join the target (link-target
+        // vector).
+        if (ch == ' ' && startsIDField(line, pos))
+            return buf;
 
         buf += ch;
         pos++;
@@ -201,16 +244,8 @@ std::string parseFlowTarget(const std::string &line, size_t &pos) {
     size_t n = line.size();
     size_t start = pos;
     while (pos < n) {
-        char ch = line[pos];
-        if (ch == ' ') {
-            std::string_view rest(line.data() + pos, n - pos);
-            if (rest.size() > 2 && rest[1] == 'c' && rest[2] == '4') {
-                return line.substr(start, pos - start);
-            }
-            if (rest.size() >= 2 && rest[1] == '-' && (rest.size() == 2 || rest[2] == ' ')) {
-                return line.substr(start, pos - start);
-            }
-        }
+        if (line[pos] == ' ' && startsIDField(line, pos))
+            return line.substr(start, pos - start);
         pos++;
     }
     return line.substr(start, pos - start);
@@ -266,7 +301,7 @@ Manifest Manifest::ParseFile(const std::filesystem::path &path) {
 // parseEntryFromLine parses one manifest entry from a full (indentation-included)
 // line. It detects and updates indent_width (auto-detected from the first
 // indented line). Mirrors the Go reference decoder.parseEntryFromLine.
-static Entry parseEntryFromLine(const std::string &line, int &indent_width, int line_num) {
+static Entry parseEntryFields(const std::string &line, int &indent_width, int line_num) {
     // Detect indentation
     size_t indent = 0;
     while (indent < line.size() && line[indent] == ' ')
@@ -383,6 +418,12 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
         }
         entry.size = std::stoll(size_str);
     }
+    // The size token ends at a space: "6x a.txt" read as size 6 and the
+    // name "x a.txt", a different entry with no error (damaged-line
+    // vector).
+    if (pos < content.size() && content[pos] != ' ')
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": invalid size");
 
     // Skip space after size
     skipSpaces(content, pos);
@@ -447,8 +488,15 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
                     while (!remaining.empty() && remaining.back() == ' ')
                         remaining.pop_back();
                 }
-                if (remaining == "-" || (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4')) {
-                    // Hard link (ungrouped)
+                if (isLoneIDField(remaining)) {
+                    // Hard link (ungrouped): the C4 ID field (or its null)
+                    // is the only field after the operator. The C4 ID is
+                    // always the last field and a target never holds an
+                    // unescaped space, so a second field means the first
+                    // is a target. A target that merely starts with "c4",
+                    // under a mode that does not say symlink (a null mode,
+                    // as views carry links), was read as a hard link and
+                    // refused (link-target vector).
                     entry.hard_link = -1;
                 } else if (pos < content.size()) {
                     // Fallback: treat as symlink target
@@ -486,6 +534,21 @@ static Entry parseEntryFromLine(const std::string &line, int &indent_width, int 
 
     return entry;
 }
+
+namespace detail {
+
+// A damaged field is an error naming the line, never a value: the mode,
+// timestamp, size and C4 ID parsers throw std::logic_error (invalid_argument,
+// out_of_range) without one, so it is added here.
+Entry parseEntryFromLine(const std::string &line, int &indent_width, int line_num) {
+    try {
+        return parseEntryFields(line, indent_width, line_num);
+    } catch (const std::logic_error &e) {
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) + ": " + e.what());
+    }
+}
+
+} // namespace detail
 
 // applyChainSection folds one accumulated section into the running manifest.
 // The first section (before any checkpoint) is the base: its entries are
@@ -580,7 +643,7 @@ Manifest Manifest::Parse(std::istream &stream) {
                                      std::to_string(line_num) + "): " + line);
         }
 
-        section.push_back(parseEntryFromLine(line, indent_width, line_num));
+        section.push_back(detail::parseEntryFromLine(line, indent_width, line_num));
         first_line = false;
     }
 

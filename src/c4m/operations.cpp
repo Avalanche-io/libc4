@@ -4,6 +4,7 @@
 // Reference: Go implementation at github.com/Avalanche-io/c4/c4m
 
 #include "c4/c4m.hpp"
+#include "entry_line.hpp"
 
 #include <algorithm>
 #include <map>
@@ -446,216 +447,6 @@ static bool readChainLine(std::istream &in, std::string &line) {
     return true;
 }
 
-// Minimal entry parser for patch chain decoding.
-// Parses a content line (mode timestamp size name [-> target] [c4id|-]).
-// This re-uses the existing parser logic but operates on a single line
-// with known indentation context.
-static Entry parseEntryLine(const std::string &line, int indent_width) {
-    // Detect indentation
-    size_t indent = 0;
-    while (indent < line.size() && line[indent] == ' ')
-        indent++;
-
-    int depth = 0;
-    if (indent_width > 0 && indent > 0)
-        depth = static_cast<int>(indent) / indent_width;
-
-    std::string content = line.substr(indent);
-    if (content.empty())
-        throw std::runtime_error("c4m: empty entry line");
-
-    // Parse mode: "-" is null (0); every ten-character mode is known,
-    // "----------" included (ZeroMode).
-    size_t pos = 0;
-    uint32_t mode = 0;
-    std::string mode_str;
-
-    if (content.size() >= 2 && content[0] == '-' && content[1] == ' ') {
-        // Null mode (single dash)
-        mode_str = "-";
-        pos = 2;
-    } else if (content.size() >= 11) {
-        mode_str = content.substr(0, 10);
-        mode = ParseMode(mode_str);
-        pos = 11;
-    } else {
-        throw std::runtime_error("c4m: entry line too short");
-    }
-
-    Entry entry;
-    entry.mode = mode;
-    entry.depth = depth;
-
-    // Parse timestamp
-    auto skip = [&]() {
-        while (pos < content.size() && content[pos] == ' ') pos++;
-    };
-
-    if (pos >= content.size())
-        throw std::runtime_error("c4m: missing timestamp");
-
-    if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-        entry.timestamp = NullTimestamp;
-        pos += 2;
-    } else if (content[pos] == '0' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-        entry.timestamp = NullTimestamp;
-        pos += 2;
-    } else if (content.size() >= pos + 20 && content[pos + 4] == '-' && content[pos + 10] == 'T') {
-        size_t end_idx = pos + 20;
-        if (content.size() >= pos + 25 &&
-            (content[pos + 19] == '+' || content[pos + 19] == '-'))
-            end_idx = pos + 25;
-        entry.timestamp = ParseTimestamp(content.substr(pos, end_idx - pos));
-        pos = end_idx;
-        if (pos < content.size() && content[pos] == ' ') pos++;
-    } else {
-        throw std::runtime_error("c4m: cannot parse timestamp");
-    }
-
-    // Parse size
-    skip();
-    if (pos >= content.size())
-        throw std::runtime_error("c4m: missing size");
-
-    if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-        entry.size = NullSize;
-        pos++;
-    } else {
-        size_t size_start = pos;
-        while (pos < content.size() &&
-               ((content[pos] >= '0' && content[pos] <= '9') || content[pos] == ','))
-            pos++;
-        std::string size_str;
-        for (size_t i = size_start; i < pos; i++) {
-            if (content[i] != ',')
-                size_str += content[i];
-        }
-        entry.size = std::stoll(size_str);
-    }
-
-    skip();
-
-    // Parse name
-    if (pos >= content.size())
-        throw std::runtime_error("c4m: missing name");
-
-    // Simplified name parser (handles quoted and unquoted)
-    if (content[pos] == '"') {
-        pos++; // skip opening quote
-        std::string buf;
-        while (pos < content.size()) {
-            char ch = content[pos];
-            if (ch == '\\' && pos + 1 < content.size()) {
-                char next = content[pos + 1];
-                if (next == '\\') buf += '\\';
-                else if (next == '"') buf += '"';
-                else if (next == 'n') buf += '\n';
-                else { buf += '\\'; buf += next; }
-                pos += 2;
-            } else if (ch == '"') {
-                pos++;
-                break;
-            } else {
-                buf += ch;
-                pos++;
-            }
-        }
-        entry.name = buf;
-    } else {
-        size_t start = pos;
-        while (pos < content.size()) {
-            char ch = content[pos];
-            if (ch == '/') {
-                pos++;
-                entry.name = content.substr(start, pos - start);
-                goto name_done;
-            }
-            if (ch == ' ' && pos + 1 < content.size()) {
-                if (content.size() - pos >= 4 && content.substr(pos, 4) == " -> ") {
-                    entry.name = content.substr(start, pos - start);
-                    goto name_done;
-                }
-                if (content[pos + 1] == 'c' && pos + 2 < content.size() && content[pos + 2] == '4') {
-                    entry.name = content.substr(start, pos - start);
-                    goto name_done;
-                }
-                if (content[pos + 1] == '-' && (pos + 2 >= content.size() || content[pos + 2] == ' ')) {
-                    entry.name = content.substr(start, pos - start);
-                    goto name_done;
-                }
-            }
-            pos++;
-        }
-        entry.name = content.substr(start);
-    }
-name_done:
-
-    // Ten dashes on a directory can only be a legacy null: a correct
-    // encoder writes a zero-permission directory as "d---------", and
-    // earlier pretty encoders wrote null as ten dashes.
-    if (mode_str == "----------" && !entry.name.empty() && entry.name.back() == '/')
-        entry.mode = 0;
-
-    skip();
-
-    // Check for symlink target
-    if (pos + 2 < content.size() && content[pos] == '-' && content[pos + 1] == '>') {
-        pos += 2;
-        skip();
-        // Parse target (simplified)
-        if (pos < content.size() && content[pos] == '"') {
-            pos++;
-            std::string buf;
-            while (pos < content.size()) {
-                char ch = content[pos];
-                if (ch == '\\' && pos + 1 < content.size()) {
-                    char next = content[pos + 1];
-                    if (next == '\\') buf += '\\';
-                    else if (next == '"') buf += '"';
-                    else if (next == 'n') buf += '\n';
-                    else { buf += '\\'; buf += next; }
-                    pos += 2;
-                } else if (ch == '"') {
-                    pos++;
-                    break;
-                } else {
-                    buf += ch;
-                    pos++;
-                }
-            }
-            entry.target = buf;
-        } else {
-            size_t start = pos;
-            while (pos < content.size()) {
-                char ch = content[pos];
-                if (ch == ' ' && pos + 1 < content.size()) {
-                    if (content[pos + 1] == 'c' && pos + 2 < content.size() && content[pos + 2] == '4')
-                        break;
-                    if (content[pos + 1] == '-' && (pos + 2 >= content.size() || content[pos + 2] == ' '))
-                        break;
-                }
-                pos++;
-            }
-            entry.target = content.substr(start, pos - start);
-        }
-        skip();
-    }
-
-    // Check for C4 ID
-    if (pos < content.size()) {
-        std::string remaining = content.substr(pos);
-        while (!remaining.empty() && remaining.back() == ' ')
-            remaining.pop_back();
-        if (remaining == "-") {
-            // Null C4 ID
-        } else if (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4') {
-            entry.id = c4::ID::Parse(remaining);
-        }
-    }
-
-    return entry;
-}
-
 std::vector<PatchSection> DecodePatchChain(std::istream &input) {
     std::vector<PatchSection> sections;
     PatchSection current;
@@ -663,7 +454,9 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
     int indent_width = -1;
     std::string line;
 
+    int line_num = 0;
     while (readChainLine(input, line)) {
+        line_num++;
         // Trim
         std::string trimmed = line;
         size_t first = trimmed.find_first_not_of(' ');
@@ -702,16 +495,7 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
             continue;
         }
 
-        // Auto-detect indent width
-        if (indent_width < 0) {
-            size_t indent = 0;
-            while (indent < line.size() && line[indent] == ' ')
-                indent++;
-            if (indent > 0)
-                indent_width = static_cast<int>(indent);
-        }
-
-        Entry entry = parseEntryLine(line, indent_width > 0 ? indent_width : 2);
+        Entry entry = detail::parseEntryFromLine(line, indent_width, line_num);
         current.entries.push_back(std::move(entry));
         first_line = false;
     }
