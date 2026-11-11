@@ -1,2 +1,6 @@
 # Byte-stable cross-implementation contract fixtures: no EOL conversion.
 tests/testdata/deepen-vector/* -text
+tests/testdata/link-target-vector/* -text
+tests/testdata/backslash-name-vector/* -text
+tests/testdata/damaged-line-vector/* -text
+tests/testdata/empty-tree-vector/* -text

@@ -4,6 +4,7 @@
 // Format is entry-only: no header, no directives. Lines starting with @ are rejected.
 
 #include "c4/c4m.hpp"
+#include "entry_line.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -76,14 +77,22 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
     while (pos < n) {
         char ch = line[pos];
 
-        // Field-boundary backslash escapes
+        // A backslash always starts a two-byte escape. A c4m field-boundary
+        // escape (\<space>, \", \[, \]) becomes its literal; any other (a
+        // SafeName escape such as \\) passes through whole for UnsafeName,
+        // so its second byte never starts an escape of its own. A name
+        // ending in a backslash read back with its C4 ID swallowed before
+        // this (backslash-name vector).
         if (ch == '\\' && pos + 1 < n) {
             char next = line[pos + 1];
             if (next == ' ' || next == '"' || next == '[' || next == ']') {
                 result.value += next;
-                pos += 2;
-                continue;
+            } else {
+                result.value += ch;
+                result.value += next;
             }
+            pos += 2;
+            continue;
         }
 
         if (ch == '[' || ch == ']') {
@@ -133,6 +142,30 @@ NameResult parseNameOrTarget(const std::string &line, size_t &pos, bool is_name)
     return result;
 }
 
+// isLoneIDField reports whether s, the rest of a line after a link
+// operator, is exactly one field that is a C4 ID or the null "-". A field
+// ends at an unescaped space.
+bool isLoneIDField(const std::string &s) {
+    if (s == "-")
+        return true;
+    if (s.size() < 2 || s[0] != 'c' || s[1] != '4')
+        return false;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\') {
+            i++;
+            continue;
+        }
+        if (s[i] == ' ')
+            return false;
+    }
+    try {
+        c4::ID::Parse(s);
+    } catch (const std::invalid_argument &) {
+        return false;
+    }
+    return true;
+}
+
 // Parse symlink target. Unlike name, '/' is NOT a boundary.
 std::string parseSymlinkTarget(const std::string &line, size_t &pos) {
     size_t n = line.size();
@@ -141,14 +174,18 @@ std::string parseSymlinkTarget(const std::string &line, size_t &pos) {
     while (pos < n) {
         char ch = line[pos];
 
-        // Backslash escapes for space and quote
+        // A backslash always starts a two-byte escape (as in names): space
+        // and quote become literals, any other passes through whole.
         if (ch == '\\' && pos + 1 < n) {
             char next = line[pos + 1];
             if (next == ' ' || next == '"') {
                 buf += next;
-                pos += 2;
-                continue;
+            } else {
+                buf += ch;
+                buf += next;
             }
+            pos += 2;
+            continue;
         }
 
         if (ch == ' ') {
@@ -252,6 +289,229 @@ Manifest Manifest::ParseFile(const std::filesystem::path &path) {
     return Parse(f);
 }
 
+// parseEntryFields parses one manifest entry from a full (indentation-
+// included) line. It detects and updates indent_width (auto-detected from
+// the first indented line).
+static Entry parseEntryFields(const std::string &line, int &indent_width, int line_num) {
+    // Detect indentation
+    size_t indent = 0;
+    while (indent < line.size() && line[indent] == ' ')
+        indent++;
+
+    if (indent_width < 0 && indent > 0)
+        indent_width = static_cast<int>(indent);
+
+    int depth = 0;
+    if (indent_width > 0 && indent > 0)
+        depth = static_cast<int>(indent) / indent_width;
+
+    // Content after indentation
+    std::string content = line.substr(indent);
+    if (content.empty())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": empty entry");
+
+    // Parse mode
+    size_t pos = 0;
+    std::string mode_str;
+
+    if (content.size() >= 2 && content[0] == '-' && content[1] == ' ') {
+        mode_str = "-";
+        pos = 2;
+    } else if (content.size() >= 11) {
+        mode_str = content.substr(0, 10);
+        pos = 11;
+    } else {
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": line too short");
+    }
+
+    uint32_t mode = 0;
+    if (mode_str != "-" && mode_str != "----------") {
+        mode = ParseMode(mode_str);
+    }
+
+    Entry entry;
+    entry.mode = mode;
+    entry.depth = depth;
+
+    // Parse timestamp
+    if (pos >= content.size())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": missing timestamp");
+
+    std::string ts_str;
+    if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
+        ts_str = "-";
+        pos += 2;
+    } else if (content[pos] == '0' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
+        ts_str = "0";
+        pos += 2;
+    } else {
+        if (content.size() >= pos + 20 && content[pos + 4] == '-' && content[pos + 10] == 'T') {
+            size_t end_idx = pos + 20;
+            if (content.size() >= pos + 25 &&
+                (content[pos + 19] == '+' || content[pos + 19] == '-'))
+                end_idx = pos + 25;
+            ts_str = content.substr(pos, end_idx - pos);
+            pos = end_idx;
+            if (pos < content.size() && content[pos] == ' ')
+                pos++;
+        } else {
+            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                     ": cannot parse timestamp");
+        }
+    }
+    entry.timestamp = ParseTimestamp(ts_str);
+
+    // Parse size
+    skipSpaces(content, pos);
+    if (pos >= content.size())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": missing size");
+
+    if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
+        entry.size = NullSize;
+        pos++;
+    } else {
+        size_t size_start = pos;
+        while (pos < content.size() &&
+               ((content[pos] >= '0' && content[pos] <= '9') || content[pos] == ','))
+            pos++;
+        if (pos == size_start)
+            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                     ": invalid size");
+        std::string size_str;
+        for (size_t i = size_start; i < pos; i++) {
+            if (content[i] != ',')
+                size_str += content[i];
+        }
+        entry.size = std::stoll(size_str);
+    }
+    // The size token ends at a space: "6x a.txt" read as size 6 and the
+    // name "x a.txt", a different entry with no error (damaged-line
+    // vector).
+    if (pos < content.size() && content[pos] != ' ')
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": invalid size");
+
+    // Skip space after size
+    skipSpaces(content, pos);
+
+    // Parse name using backslash-escaped name parser
+    if (pos >= content.size())
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) +
+                                 ": missing name");
+
+    auto name_result = parseNameOrTarget(content, pos, true);
+    entry.name = UnsafeName(name_result.value);
+
+    // Check for sequence notation in raw name
+    if (hasUnescapedSequenceNotation(name_result.raw)) {
+        entry.is_sequence = true;
+        entry.pattern = entry.name;
+    }
+
+    // Skip whitespace
+    skipSpaces(content, pos);
+
+    // Parse link operators: ->, <-, <>
+    bool is_symlink = (mode & ModeSymlink) != 0;
+
+    if (pos + 1 < content.size() && content[pos] == '-' && content[pos + 1] == '>') {
+        pos += 2;
+
+        if (is_symlink) {
+            // Symlink mode: -> is always a symlink target
+            skipSpaces(content, pos);
+            if (pos < content.size()) {
+                entry.target = UnsafeName(parseSymlinkTarget(content, pos));
+                skipSpaces(content, pos);
+            }
+        } else if (pos < content.size() && content[pos] >= '1' && content[pos] <= '9') {
+            // Hard link group number: ->N
+            size_t group_start = pos;
+            while (pos < content.size() && content[pos] >= '0' && content[pos] <= '9')
+                pos++;
+            entry.hard_link = std::stoi(content.substr(group_start, pos - group_start));
+            skipSpaces(content, pos);
+        } else {
+            skipSpaces(content, pos);
+
+            // Determine type by examining token after ->
+            if (pos < content.size() && isFlowTarget(content, pos)) {
+                entry.flow_direction = FlowDirection::Outbound;
+                entry.flow_target = parseFlowTarget(content, pos);
+                skipSpaces(content, pos);
+            } else {
+                std::string remaining;
+                if (pos < content.size()) {
+                    remaining = content.substr(pos);
+                    while (!remaining.empty() && remaining.back() == ' ')
+                        remaining.pop_back();
+                }
+                if (isLoneIDField(remaining)) {
+                    // Hard link (ungrouped): the C4 ID field (or its null)
+                    // is the only field after the operator. The C4 ID is
+                    // always the last field and a target never holds an
+                    // unescaped space, so a second field means the first
+                    // is a target. A target that merely starts with "c4",
+                    // under a mode that does not say symlink (a null mode,
+                    // as views carry links), was read as a hard link and
+                    // refused (link-target vector).
+                    entry.hard_link = -1;
+                } else if (pos < content.size()) {
+                    // Fallback: treat as symlink target
+                    entry.target = UnsafeName(parseSymlinkTarget(content, pos));
+                    skipSpaces(content, pos);
+                }
+            }
+        }
+    } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '-') {
+        pos += 2;
+        skipSpaces(content, pos);
+        entry.flow_direction = FlowDirection::Inbound;
+        entry.flow_target = parseFlowTarget(content, pos);
+        skipSpaces(content, pos);
+    } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '>') {
+        pos += 2;
+        skipSpaces(content, pos);
+        entry.flow_direction = FlowDirection::Bidirectional;
+        entry.flow_target = parseFlowTarget(content, pos);
+        skipSpaces(content, pos);
+    }
+
+    // Parse C4 ID or null marker
+    if (pos < content.size()) {
+        std::string remaining = content.substr(pos);
+        while (!remaining.empty() && remaining.back() == ' ')
+            remaining.pop_back();
+
+        if (remaining == "-") {
+            // Null C4 ID
+        } else if (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4') {
+            entry.id = c4::ID::Parse(remaining);
+        }
+    }
+
+    return entry;
+}
+
+namespace detail {
+
+// A damaged field is an error naming the line, never a value: the mode,
+// timestamp, size and C4 ID parsers throw std::logic_error (invalid_argument,
+// out_of_range) without one, so it is added here.
+Entry parseEntryFromLine(const std::string &line, int &indent_width, int line_num) {
+    try {
+        return parseEntryFields(line, indent_width, line_num);
+    } catch (const std::logic_error &e) {
+        throw std::runtime_error("c4m: line " + std::to_string(line_num) + ": " + e.what());
+    }
+}
+
+} // namespace detail
+
 Manifest Manifest::Parse(std::istream &stream) {
     Manifest m;
     int line_num = 0;
@@ -286,194 +546,7 @@ Manifest Manifest::Parse(std::istream &stream) {
                                      std::to_string(line_num) + "): " + line);
         }
 
-        // Detect indentation
-        size_t indent = 0;
-        while (indent < line.size() && line[indent] == ' ')
-            indent++;
-
-        if (indent_width < 0 && indent > 0)
-            indent_width = static_cast<int>(indent);
-
-        int depth = 0;
-        if (indent_width > 0 && indent > 0)
-            depth = static_cast<int>(indent) / indent_width;
-
-        // Content after indentation
-        std::string content = line.substr(indent);
-        if (content.empty())
-            continue;
-
-        // Parse mode
-        size_t pos = 0;
-        std::string mode_str;
-
-        if (content.size() >= 2 && content[0] == '-' && content[1] == ' ') {
-            mode_str = "-";
-            pos = 2;
-        } else if (content.size() >= 11) {
-            mode_str = content.substr(0, 10);
-            pos = 11;
-        } else {
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": line too short");
-        }
-
-        uint32_t mode = 0;
-        if (mode_str != "-" && mode_str != "----------") {
-            mode = ParseMode(mode_str);
-        }
-
-        Entry entry;
-        entry.mode = mode;
-        entry.depth = depth;
-
-        // Parse timestamp
-        if (pos >= content.size())
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": missing timestamp");
-
-        std::string ts_str;
-        if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-            ts_str = "-";
-            pos += 2;
-        } else if (content[pos] == '0' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-            ts_str = "0";
-            pos += 2;
-        } else {
-            if (content.size() >= pos + 20 && content[pos + 4] == '-' && content[pos + 10] == 'T') {
-                size_t end_idx = pos + 20;
-                if (content.size() >= pos + 25 &&
-                    (content[pos + 19] == '+' || content[pos + 19] == '-'))
-                    end_idx = pos + 25;
-                ts_str = content.substr(pos, end_idx - pos);
-                pos = end_idx;
-                if (pos < content.size() && content[pos] == ' ')
-                    pos++;
-            } else {
-                throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                         ": cannot parse timestamp");
-            }
-        }
-        entry.timestamp = ParseTimestamp(ts_str);
-
-        // Parse size
-        skipSpaces(content, pos);
-        if (pos >= content.size())
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": missing size");
-
-        if (content[pos] == '-' && (pos + 1 >= content.size() || content[pos + 1] == ' ')) {
-            entry.size = NullSize;
-            pos++;
-        } else {
-            size_t size_start = pos;
-            while (pos < content.size() &&
-                   ((content[pos] >= '0' && content[pos] <= '9') || content[pos] == ','))
-                pos++;
-            if (pos == size_start)
-                throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                         ": invalid size");
-            std::string size_str;
-            for (size_t i = size_start; i < pos; i++) {
-                if (content[i] != ',')
-                    size_str += content[i];
-            }
-            entry.size = std::stoll(size_str);
-        }
-
-        // Skip space after size
-        skipSpaces(content, pos);
-
-        // Parse name using backslash-escaped name parser
-        if (pos >= content.size())
-            throw std::runtime_error("c4m: line " + std::to_string(line_num) +
-                                     ": missing name");
-
-        auto name_result = parseNameOrTarget(content, pos, true);
-        entry.name = UnsafeName(name_result.value);
-
-        // Check for sequence notation in raw name
-        if (hasUnescapedSequenceNotation(name_result.raw)) {
-            entry.is_sequence = true;
-            entry.pattern = entry.name;
-        }
-
-        // Skip whitespace
-        skipSpaces(content, pos);
-
-        // Parse link operators: ->, <-, <>
-        bool is_symlink = (mode & ModeSymlink) != 0;
-
-        if (pos + 1 < content.size() && content[pos] == '-' && content[pos + 1] == '>') {
-            pos += 2;
-
-            if (is_symlink) {
-                // Symlink mode: -> is always a symlink target
-                skipSpaces(content, pos);
-                if (pos < content.size()) {
-                    entry.target = UnsafeName(parseSymlinkTarget(content, pos));
-                    skipSpaces(content, pos);
-                }
-            } else if (pos < content.size() && content[pos] >= '1' && content[pos] <= '9') {
-                // Hard link group number: ->N
-                size_t group_start = pos;
-                while (pos < content.size() && content[pos] >= '0' && content[pos] <= '9')
-                    pos++;
-                entry.hard_link = std::stoi(content.substr(group_start, pos - group_start));
-                skipSpaces(content, pos);
-            } else {
-                skipSpaces(content, pos);
-
-                // Determine type by examining token after ->
-                if (pos < content.size() && isFlowTarget(content, pos)) {
-                    entry.flow_direction = FlowDirection::Outbound;
-                    entry.flow_target = parseFlowTarget(content, pos);
-                    skipSpaces(content, pos);
-                } else {
-                    std::string remaining;
-                    if (pos < content.size()) {
-                        remaining = content.substr(pos);
-                        while (!remaining.empty() && remaining.back() == ' ')
-                            remaining.pop_back();
-                    }
-                    if (remaining == "-" || (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4')) {
-                        // Hard link (ungrouped)
-                        entry.hard_link = -1;
-                    } else if (pos < content.size()) {
-                        // Fallback: treat as symlink target
-                        entry.target = UnsafeName(parseSymlinkTarget(content, pos));
-                        skipSpaces(content, pos);
-                    }
-                }
-            }
-        } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '-') {
-            pos += 2;
-            skipSpaces(content, pos);
-            entry.flow_direction = FlowDirection::Inbound;
-            entry.flow_target = parseFlowTarget(content, pos);
-            skipSpaces(content, pos);
-        } else if (pos + 1 < content.size() && content[pos] == '<' && content[pos + 1] == '>') {
-            pos += 2;
-            skipSpaces(content, pos);
-            entry.flow_direction = FlowDirection::Bidirectional;
-            entry.flow_target = parseFlowTarget(content, pos);
-            skipSpaces(content, pos);
-        }
-
-        // Parse C4 ID or null marker
-        if (pos < content.size()) {
-            std::string remaining = content.substr(pos);
-            while (!remaining.empty() && remaining.back() == ' ')
-                remaining.pop_back();
-
-            if (remaining == "-") {
-                // Null C4 ID
-            } else if (remaining.size() >= 2 && remaining[0] == 'c' && remaining[1] == '4') {
-                entry.id = c4::ID::Parse(remaining);
-            }
-        }
-
-        m.entries_.push_back(std::move(entry));
+        m.entries_.push_back(detail::parseEntryFromLine(line, indent_width, line_num));
     }
 
     return m;
