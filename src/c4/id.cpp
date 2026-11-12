@@ -73,37 +73,21 @@ ID ID::Identify(std::istream &stream) {
     return id;
 }
 
+// Deprecated since 1.0.27: the C4 ID of exactly these bytes. Through 1.0.26
+// this re-rendered anything that parsed as c4m first, so the ID named other
+// bytes. A description's ID is c4m::Manifest::Parse(data).ComputeC4ID().
 ID ID::IdentifyC4mAware(const void *data, size_t len) {
-    std::string_view sv(static_cast<const char *>(data), len);
-    return IdentifyC4mAware(sv);
+    return Identify(data, len);
 }
 
 ID ID::IdentifyC4mAware(std::string_view data) {
-    if (c4m::LooksLikeC4m(data)) {
-        std::string canonical = c4m::CanonicalizeC4m(data);
-        if (!canonical.empty())
-            return Identify(canonical);
-    }
     return Identify(data);
 }
 
 ID ID::IdentifyFile(const std::filesystem::path &path) {
-    // For .c4m files, use c4m-aware identification
-    if (path.extension() == ".c4m") {
-        std::ifstream file(path, std::ios::binary);
-        if (!file) {
-            throw std::runtime_error("cannot open file: " + path.string());
-        }
-        std::string content((std::istreambuf_iterator<char>(file)),
-                             std::istreambuf_iterator<char>());
-        // .c4m extension: skip Phase 1, go directly to Phase 2 parse attempt
-        std::string canonical = c4m::CanonicalizeC4m(content);
-        if (!canonical.empty())
-            return Identify(canonical);
-        // Parse failed: fall through to raw byte hash
-        return Identify(content);
-    }
-
+    // A file's C4 ID is the ID of its bytes, whatever its name or content: the
+    // ID summons exactly that file. Through 1.0.26 a .c4m-named file was
+    // identified by its re-rendered canonical text.
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         throw std::runtime_error("cannot open file: " + path.string());

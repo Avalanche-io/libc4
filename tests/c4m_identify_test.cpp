@@ -8,7 +8,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstring>
 #include <string>
+
+// The detection, canonicalization and c4m-aware names are deprecated since
+// 1.0.27; these tests pin what they still do.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 // =============================================================
 // Detection heuristic tests
@@ -111,155 +118,79 @@ TEST_CASE("CanonicalizeC4m: empty input returns empty", "[c4m][canonical]") {
 }
 
 // =============================================================
-// c4m-aware identification: canonical equivalence
+// Two IDs for a c4m text (since 1.0.27): its byte ID is Identify of the
+// text, like any other file; the ID of the description it holds is
+// Manifest::Parse(text).ComputeC4ID(), the same for every form. Through
+// 1.0.26 IdentifyC4mAware gave a third ID, the re-rendered nested text's.
 // =============================================================
 
-TEST_CASE("IdentifyC4mAware: pretty and canonical produce same ID", "[c4m][identify]") {
-    // Canonical form (no indentation, sorted)
-    std::string canonical =
-        "-rw-r--r-- 2025-01-15T10:30:00Z 100 a.txt -\n"
-        "-rw-r--r-- 2025-01-15T10:30:00Z 200 b.txt -\n";
+namespace {
+c4::ID description(const std::string &text) { return c4m::Manifest::Parse(text).ComputeC4ID(); }
+} // namespace
 
-    // Pretty form (indentation, different order would sort the same)
-    std::string pretty =
-        "-rw-r--r-- 2025-01-15T10:30:00Z 100 a.txt -\n"
-        "-rw-r--r-- 2025-01-15T10:30:00Z 200 b.txt -\n";
-
-    auto id_canonical = c4::ID::IdentifyC4mAware(canonical);
-    auto id_pretty = c4::ID::IdentifyC4mAware(pretty);
-    REQUIRE(id_canonical == id_pretty);
-}
-
-TEST_CASE("IdentifyC4mAware: different indentation widths produce same ID", "[c4m][identify]") {
-    // 2-space indentation (canonical)
+TEST_CASE("description ID: different indentation widths describe one tree", "[c4m][identify]") {
     std::string indent2 =
         "drwxr-xr-x - - src/ -\n"
         "  -rw-r--r-- - - main.cpp -\n";
-
-    // 4-space indentation (non-canonical)
     std::string indent4 =
         "drwxr-xr-x - - src/ -\n"
         "    -rw-r--r-- - - main.cpp -\n";
-
-    auto id_2 = c4::ID::IdentifyC4mAware(indent2);
-    auto id_4 = c4::ID::IdentifyC4mAware(indent4);
-    REQUIRE(id_2 == id_4);
+    REQUIRE(description(indent2) == description(indent4));
+    REQUIRE(c4::ID::Identify(indent2) != c4::ID::Identify(indent4));
 }
 
-TEST_CASE("IdentifyC4mAware: null mode forms produce same ID", "[c4m][identify]") {
-    // Null mode as single dash (canonical input)
-    std::string dash = "- - - test.txt -\n";
-
-    // Null mode as ten dashes (display format input)
-    std::string ten_dash = "---------- - - test.txt -\n";
-
-    auto id_dash = c4::ID::IdentifyC4mAware(dash);
-    auto id_ten = c4::ID::IdentifyC4mAware(ten_dash);
-    REQUIRE(id_dash == id_ten);
+TEST_CASE("description ID: null mode forms describe one tree on this line", "[c4m][identify]") {
+    // On 1.0.x ten dashes still decode as a null mode (the zero-versus-null
+    // rule is held off this line).
+    REQUIRE(description("- - - test.txt -\n") == description("---------- - - test.txt -\n"));
 }
 
-TEST_CASE("IdentifyC4mAware: unsorted entries produce same ID as sorted", "[c4m][identify]") {
-    // Files in reverse order
+TEST_CASE("description ID: unsorted entries describe the sorted tree", "[c4m][identify]") {
     std::string unsorted =
         "-rw-r--r-- - - z.txt -\n"
         "-rw-r--r-- - - a.txt -\n";
-
-    // Files in sorted order
     std::string sorted =
         "-rw-r--r-- - - a.txt -\n"
         "-rw-r--r-- - - z.txt -\n";
-
-    auto id_unsorted = c4::ID::IdentifyC4mAware(unsorted);
-    auto id_sorted = c4::ID::IdentifyC4mAware(sorted);
-    REQUIRE(id_unsorted == id_sorted);
+    REQUIRE(description(unsorted) == description(sorted));
+    REQUIRE(c4::ID::Identify(unsorted) != c4::ID::Identify(sorted));
 }
 
-// =============================================================
-// Non-c4m fallback: raw bytes
-// =============================================================
-
-TEST_CASE("IdentifyC4mAware: non-c4m falls through to raw hash", "[c4m][identify]") {
-    std::string data = "hello world";
-    auto id_aware = c4::ID::IdentifyC4mAware(data);
-    auto id_raw = c4::ID::Identify(data);
-    REQUIRE(id_aware == id_raw);
-}
-
-TEST_CASE("IdentifyC4mAware: JSON falls through to raw hash", "[c4m][identify]") {
-    std::string data = "{\"key\": \"value\"}";
-    auto id_aware = c4::ID::IdentifyC4mAware(data);
-    auto id_raw = c4::ID::Identify(data);
-    REQUIRE(id_aware == id_raw);
-}
-
-TEST_CASE("IdentifyC4mAware: binary data falls through", "[c4m][identify]") {
-    std::string data = "\x00\x01\x02\x03\x04\x05";
-    auto id_aware = c4::ID::IdentifyC4mAware(data);
-    auto id_raw = c4::ID::Identify(data);
-    REQUIRE(id_aware == id_raw);
-}
-
-TEST_CASE("IdentifyC4mAware: dash-prefixed non-c4m falls through", "[c4m][identify]") {
-    // Starts with '-' (passes Phase 1) but won't parse as c4m (fails Phase 2)
-    std::string data = "--- this is a diff file\n+++ not c4m content\n";
-    auto id_aware = c4::ID::IdentifyC4mAware(data);
-    auto id_raw = c4::ID::Identify(data);
-    REQUIRE(id_aware == id_raw);
-}
-
-// =============================================================
-// c4m-aware ID differs from raw byte ID for valid c4m
-// =============================================================
-
-TEST_CASE("IdentifyC4mAware: c4m ID differs from raw byte ID when non-canonical", "[c4m][identify]") {
-    // 4-space indentation is non-canonical (canonical is 2-space)
+TEST_CASE("byte ID: non-canonical c4m text is identified by its bytes", "[c4m][identify]") {
     std::string non_canonical =
         "drwxr-xr-x - - src/ -\n"
         "    -rw-r--r-- - - main.cpp -\n";
-
-    auto id_aware = c4::ID::IdentifyC4mAware(non_canonical);
-    auto id_raw = c4::ID::Identify(non_canonical);
-
-    // The c4m-aware ID should differ because canonicalization changes the bytes
-    REQUIRE(id_aware != id_raw);
+    std::string canonical = c4m::Manifest::Parse(non_canonical).Encode();
+    REQUIRE(canonical != non_canonical);
+    REQUIRE(c4::ID::Identify(non_canonical) != c4::ID::Identify(canonical));
 }
 
 // =============================================================
-// C API c4m-aware identification
+// Deprecated since 1.0.27 (removed in 1.1): IdentifyC4mAware and
+// c4_identify_c4m_aware are the bytes' ID.
 // =============================================================
 
-TEST_CASE("C API: c4_identify_c4m_aware non-c4m matches c4_identify", "[c4m][identify][c-api]") {
-    const char *data = "hello world";
-    size_t len = strlen(data);
-
-    c4_id_t *id_aware = c4_id_new();
-    c4_id_t *id_raw = c4_id_new();
-
-    REQUIRE(c4_identify_c4m_aware(data, len, id_aware) == C4_OK);
-    REQUIRE(c4_identify(data, len, id_raw) == C4_OK);
-    REQUIRE(c4_id_equal(id_aware, id_raw));
-
-    c4_id_free(id_aware);
-    c4_id_free(id_raw);
+TEST_CASE("IdentifyC4mAware (deprecated) is Identify", "[c4m][identify]") {
+    const std::string inputs[] = {
+        std::string("-rw-r--r-- 2025-01-15T10:30:00Z 100 a.txt -\n"),
+        std::string("drwxr-xr-x - - src/ -\n    -rw-r--r-- - - main.cpp -\n"),
+        std::string("-rw-r--r-- - - z.txt -\n-rw-r--r-- - - a.txt -\n"),
+        std::string("hello world"),
+        std::string("\x00\x01\x02\x03", 4),
+    };
+    for (const auto &data : inputs) {
+        REQUIRE(c4::ID::IdentifyC4mAware(data) == c4::ID::Identify(data));
+        REQUIRE(c4::ID::IdentifyC4mAware(data.data(), data.size()) == c4::ID::Identify(data));
+    }
 }
 
-TEST_CASE("C API: c4_identify_c4m_aware c4m content canonicalizes", "[c4m][identify][c-api]") {
-    // Unsorted entries
-    const char *unsorted =
-        "-rw-r--r-- - - z.txt -\n"
-        "-rw-r--r-- - - a.txt -\n";
-    // Sorted entries
-    const char *sorted_c4m =
-        "-rw-r--r-- - - a.txt -\n"
-        "-rw-r--r-- - - z.txt -\n";
-
-    c4_id_t *id_unsorted = c4_id_new();
-    c4_id_t *id_sorted = c4_id_new();
-
-    REQUIRE(c4_identify_c4m_aware(unsorted, strlen(unsorted), id_unsorted) == C4_OK);
-    REQUIRE(c4_identify_c4m_aware(sorted_c4m, strlen(sorted_c4m), id_sorted) == C4_OK);
-    REQUIRE(c4_id_equal(id_unsorted, id_sorted));
-
-    c4_id_free(id_unsorted);
-    c4_id_free(id_sorted);
+TEST_CASE("C API: c4_identify_c4m_aware (deprecated) is c4_identify", "[c4m][identify][c-api]") {
+    const char *unsorted = "-rw-r--r-- - - z.txt -\n-rw-r--r-- - - a.txt -\n";
+    c4_id_t *aware = c4_id_new();
+    c4_id_t *plain = c4_id_new();
+    REQUIRE(c4_identify_c4m_aware(unsorted, strlen(unsorted), aware) == C4_OK);
+    REQUIRE(c4_identify(unsorted, strlen(unsorted), plain) == C4_OK);
+    REQUIRE(c4_id_equal(aware, plain) == 1);
+    c4_id_free(aware);
+    c4_id_free(plain);
 }

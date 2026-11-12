@@ -325,10 +325,13 @@ std::string UnescapeField(const std::string &escaped);
 // check if the first non-space byte is a valid c4m mode character
 // ('-', 'd', 'l', 'p', 's', 'b', 'c'). Returns true if content might be
 // c4m and deserves a full parse attempt.
+[[deprecated("Since 1.0.27 nothing in libc4 identifies by this; removed in 1.1")]]
 bool LooksLikeC4m(std::string_view data);
 
 // CanonicalizeC4m attempts to parse data as c4m. On success, returns the
 // canonical encoding (sorted, deterministic). On failure, returns empty.
+// Returns text, not an ID; nothing in libc4 identifies by it since 1.0.27.
+[[deprecated("Since 1.0.27 nothing in libc4 identifies by this; to normalise, use Manifest::Parse(data).Encode(); removed in 1.1")]]
 std::string CanonicalizeC4m(std::string_view data);
 
 } // namespace c4m

@@ -28,12 +28,15 @@ public:
     static ID Identify(std::string_view data);
     static ID Identify(std::istream &stream);
 
-    // Identify a file (c4m-aware: .c4m extension triggers canonical heuristic)
+    // Identify a file: the C4 ID of its bytes, whatever its name or content.
     static ID IdentifyFile(const std::filesystem::path &path);
 
-    // c4m-aware identification: if data parses as a valid c4m file,
-    // canonicalize it before hashing. Otherwise hash raw bytes.
+    // Deprecated since 1.0.27, removed in 1.1: the C4 ID of exactly these
+    // bytes (it is Identify). Through 1.0.26 c4m text was re-rendered first.
+    // For a description's ID use c4m::Manifest::Parse(data).ComputeC4ID().
+    [[deprecated("Since 1.0.27 this is Identify (the bytes' ID); use Identify, or Manifest::Parse(data).ComputeC4ID() for a description")]]
     static ID IdentifyC4mAware(const void *data, size_t len);
+    [[deprecated("Since 1.0.27 this is Identify (the bytes' ID); use Identify, or Manifest::Parse(data).ComputeC4ID() for a description")]]
     static ID IdentifyC4mAware(std::string_view data);
 
     // Parse from string

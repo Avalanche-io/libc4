@@ -8,3 +8,4 @@ tests/testdata/unicode-name-vector/* -text
 tests/testdata/name-rule-vector/* -text
 tests/testdata/name-escape-vector/* -text
 tests/testdata/childless-dir-vector/* -text
+tests/testdata/file-id/* -text
