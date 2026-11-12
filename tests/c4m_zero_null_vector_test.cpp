@@ -148,12 +148,13 @@ TEST_CASE("zero-null-vector: pretty.c4m decodes to the same manifest", "[c4m][ve
 }
 
 TEST_CASE("zero-null-vector: the two forms normalise to one text", "[c4m][vector][zero-null]") {
-    // IdentifyC4mAware hashes the normalised nested text (not the root
-    // listing, so not the description ID); both forms must land on it.
-    auto id_canonical = c4::ID::IdentifyC4mAware(readAll(fixture("canonical.c4m")));
-    auto id_pretty = c4::ID::IdentifyC4mAware(readAll(fixture("pretty.c4m")));
-    REQUIRE(id_canonical == id_pretty);
-    REQUIRE(c4m::CanonicalizeC4m(readAll(fixture("pretty.c4m"))) == readAll(fixture("canonical.c4m")));
+    // Both forms decode to one description, with one description ID, and
+    // the pretty form re-encodes to the canonical text. Each file keeps its
+    // own byte ID (a file's C4 ID is its bytes).
+    auto canonical = c4m::Manifest::Parse(readAll(fixture("canonical.c4m")));
+    auto pretty = c4m::Manifest::Parse(readAll(fixture("pretty.c4m")));
+    REQUIRE(canonical.ComputeC4ID() == pretty.ComputeC4ID());
+    REQUIRE(pretty.Encode() == readAll(fixture("canonical.c4m")));
 }
 
 TEST_CASE("legacy: ten dashes on every directory of a 1.0.21 file decodes as null", "[c4m][vector][zero-null][legacy]") {
