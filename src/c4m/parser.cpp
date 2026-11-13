@@ -311,6 +311,13 @@ bool hasUnescapedSequenceNotation(const std::string &raw) {
 
 namespace c4m {
 
+// The message matches the Go reference's ErrTrailingID text and names the fix.
+TrailingIDError::TrailingIDError(int line)
+    : std::runtime_error("c4m: a bare C4 ID ends the file; a c4m file never ends with its own ID (line " +
+                         std::to_string(line) +
+                         "): delete that line, or rewrite the file with `c4 id FILE.c4m > fixed.c4m`"),
+      line_(line) {}
+
 Manifest Manifest::Parse(std::string_view data) {
     std::istringstream ss{std::string(data)};
     return Parse(ss);
@@ -629,12 +636,14 @@ Manifest Manifest::Parse(std::istream &stream) {
     //   - otherwise a checkpoint naming the accumulated manifest state: flush
     //     the pending section (base append or patch apply), then verify the
     //     accumulated C4 ID against the checkpoint (reject on mismatch).
-    // A trailing bare ID at EOF is the closing validator (verified above);
-    // consecutive checkpoints re-verify the same state and are accepted.
-    // Verification is skipped once an external base reference is present.
+    // Consecutive checkpoints re-verify the same state and are accepted when
+    // a patch follows. A bare ID at end of input is a format error
+    // (TrailingIDError, ruled 2026-11-08): a c4m file never ends with its own
+    // ID. Verification is skipped once an external base reference is present.
     std::vector<Entry> section;
     bool first_line = true;
     bool patch_mode = false;
+    int last_checkpoint_line = 0; // line of the last bare ID if nothing followed it
 
     std::string line;
     while (readLine(stream, line, line_num)) {
@@ -662,6 +671,7 @@ Manifest Manifest::Parse(std::istream &stream) {
                 // First line of stream: external base reference.
                 m.SetBase(id);
             } else {
+                last_checkpoint_line = line_num;
                 applyChainSection(m, section, patch_mode);
                 patch_mode = true;
 
@@ -690,11 +700,19 @@ Manifest Manifest::Parse(std::istream &stream) {
 
         section.push_back(detail::parseEntryFromLine(line, indent_width, line_num));
         first_line = false;
+        last_checkpoint_line = 0;
     }
 
-    // Flush the trailing section. A stream may end without a closing validator
-    // (final patch applies unverified, C4M-STANDARD 10.7); a stream ending in a
-    // bare C4 ID already flushed an empty section and verified above.
+    // A bare C4 ID at end of input is a format error. The checkpoint was
+    // verified above, so a wrong one has already thrown a mismatch; a right
+    // one is refused here, naming the fix. A file that is only a first-line
+    // base reference is not a trailing ID.
+    if (last_checkpoint_line != 0)
+        throw TrailingIDError(last_checkpoint_line);
+
+    // Flush the final section: a chain ends on its last section's entries,
+    // and the final patch is verified by what it names, not by a line after
+    // it (C4M-STANDARD 10.7).
     applyChainSection(m, section, patch_mode);
 
     return m;

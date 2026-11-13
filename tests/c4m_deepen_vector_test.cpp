@@ -125,9 +125,11 @@ TEST_CASE("deepen-vector: the same restated line resolves to different states", 
 }
 
 #ifdef C4M_DEEPEN_VECTOR_CHAIN
-// The resolving parser (checkpoints verified, closing validator verified)
-// must accept both files and land on the pinned IDs. The 1.0.x parser does
-// not resolve chains, so that line builds without this define.
+// The resolving parser (checkpoints verified) must accept both files and
+// land on the pinned IDs. Both end on their last entry line; until
+// 2026-11-08 each ended with its resolved ID, a shape now refused as a
+// trailing ID. The 1.0.x parser does not resolve chains, so that line
+// builds without this define.
 TEST_CASE("deepen-vector: the resolving parser accepts deepen.c4m", "[c4m][chain][vector]") {
     c4m::Manifest m;
     REQUIRE_NOTHROW(m = c4m::Manifest::ParseFile(fixture("deepen.c4m")));
@@ -138,5 +140,15 @@ TEST_CASE("deepen-vector: the resolving parser accepts remove.c4m", "[c4m][chain
     c4m::Manifest m;
     REQUIRE_NOTHROW(m = c4m::Manifest::ParseFile(fixture("remove.c4m")));
     checkRemove(m);
+}
+
+TEST_CASE("deepen-vector: either file with its resolved ID appended is refused", "[c4m][chain][vector]") {
+    for (const char *name : {"deepen", "remove"}) {
+        INFO(name);
+        const std::string text = readAll(fixture(std::string(name) + ".c4m")) +
+                                 readTrimmed(fixture(std::string(name) + "-root-id.txt")) + "\n";
+        CHECK_THROWS_AS(c4m::Manifest::Parse(std::string_view(text)), c4m::TrailingIDError);
+        CHECK_THROWS_AS(c4m::DecodePatchChain(std::string_view(text)), c4m::TrailingIDError);
+    }
 }
 #endif

@@ -407,15 +407,12 @@ std::string EncodePatch(const PatchResult &pr) {
         out += '\n';
     }
 
-    // Patch entries
+    // Patch entries. Nothing follows them: a bare ID after the entries would
+    // be the new state's own ID, and a c4m file never ends with its own ID
+    // (format error since 2026-11-08; through 1.0.26 this wrote pr.newID
+    // here). The patch resolves to pr.newID.
     for (const auto &entry : pr.patch.Entries()) {
         out += entry.Format(2);
-        out += '\n';
-    }
-
-    // New ID (page boundary)
-    if (!pr.newID.IsNil()) {
-        out += pr.newID.String();
         out += '\n';
     }
 
@@ -459,6 +456,7 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
     bool first_line = true;
     int indent_width = -1;
     std::string line;
+    int last_id_line = 0; // line of the last bare ID if nothing followed it
 
     int line_num = 0;
     while (readChainLine(input, line)) {
@@ -490,12 +488,14 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
             } else if (current.entries.empty() && !sections.empty()) {
                 // Consecutive bare IDs: update base
                 current.baseID = id;
+                last_id_line = line_num;
             } else {
                 // Flush current section
                 if (!current.entries.empty())
                     sections.push_back(std::move(current));
                 current = PatchSection();
                 current.baseID = id;
+                last_id_line = line_num;
             }
             first_line = false;
             continue;
@@ -504,7 +504,15 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
         Entry entry = detail::parseEntryFromLine(line, indent_width, line_num);
         current.entries.push_back(std::move(entry));
         first_line = false;
+        last_id_line = 0;
     }
+
+    // A bare C4 ID at end of input is a format error (2026-11-08): a c4m
+    // file never ends with its own ID. Through 1.0.26 this reader dropped it
+    // silently as a "closing validator"; now it refuses the file and names
+    // the fix, the same as Manifest::Parse.
+    if (last_id_line != 0)
+        throw TrailingIDError(last_id_line);
 
     // Flush final section (only if it has entries)
     if (!current.entries.empty())

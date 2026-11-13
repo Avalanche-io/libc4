@@ -275,11 +275,29 @@ TEST_CASE("EncodePatch: basic structure", "[c4m][ops]") {
     auto pr = c4m::PatchDiff(old_m, new_m);
     std::string encoded = c4m::EncodePatch(pr);
 
-    // Should contain old ID, entries, new ID
+    // The old ID as the boundary, then the entries, nothing after: a c4m
+    // file never ends with its own ID (2026-11-08), so the new ID is absent.
     REQUIRE_FALSE(encoded.empty());
-    REQUIRE(encoded.find(pr.oldID.String()) != std::string::npos);
-    REQUIRE(encoded.find(pr.newID.String()) != std::string::npos);
+    REQUIRE(encoded.rfind(pr.oldID.String() + "\n", 0) == 0);
+    REQUIRE(encoded.find(pr.newID.String()) == std::string::npos);
     REQUIRE(encoded.find("b.txt") != std::string::npos);
+    std::string last = encoded.substr(0, encoded.size() - 1);
+    last = last.substr(last.rfind('\n') + 1);
+    REQUIRE(last.find("b.txt") != std::string::npos);
+}
+
+TEST_CASE("EncodePatch: appended to its base, resolves to the new ID", "[c4m][ops]") {
+    // The `c4 id > f; c4 diff f dir >> f` shape: the chain resolves to the
+    // new state and every reader accepts it.
+    c4m::Manifest old_m, new_m;
+    old_m.AddEntry(makeFile("a.txt", 100));
+    new_m.AddEntry(makeFile("a.txt", 100));
+    new_m.AddEntry(makeFile("b.txt", 200));
+
+    auto pr = c4m::PatchDiff(old_m, new_m);
+    const std::string chain = old_m.Encode() + c4m::EncodePatch(pr);
+    REQUIRE(c4m::Manifest::Parse(std::string_view(chain)).ComputeC4ID() == pr.newID);
+    REQUIRE(c4m::ResolvePatchChain(c4m::DecodePatchChain(std::string_view(chain))).ComputeC4ID() == pr.newID);
 }
 
 // =============================================================
@@ -566,6 +584,7 @@ TEST_CASE("Patch chain encode-decode round-trip", "[c4m][ops]") {
 
     // Decode into chain sections
     auto sections = c4m::DecodePatchChain(std::string_view(encoded));
-    // Should have 1 section (the patch entries between the two ID boundaries)
-    REQUIRE(sections.size() >= 1);
+    // One section: the patch entries after the old ID boundary.
+    REQUIRE(sections.size() == 1);
+    REQUIRE(sections[0].baseID == pr.oldID);
 }

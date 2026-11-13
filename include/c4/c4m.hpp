@@ -13,12 +13,30 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 namespace c4m {
+
+// TrailingIDError is thrown when a stream ends with a bare C4 ID (Go's
+// c4m.ErrTrailingID). A c4m file never ends with its own ID: a bare ID is
+// the first-line base reference or a checkpoint before a patch, and a file
+// that ends with one is a format error (ruled 2026-11-08). Chains grown
+// with `c4 diff >>` by c4 1.0.13 through 1.0.26 have this shape; the c4
+// normaliser (`c4 id FILE.c4m`, c4 1.1) rewrites them. line() is the line
+// of the trailing ID. It derives from std::runtime_error, so existing
+// handlers still catch it.
+class TrailingIDError : public std::runtime_error {
+public:
+    explicit TrailingIDError(int line);
+    int line() const noexcept { return line_; }
+
+private:
+    int line_;
+};
 
 // Mode type bits (matching Go's os.FileMode layout for cross-language compat)
 constexpr uint32_t ModeDir        = 0x80000000;
@@ -119,7 +137,10 @@ class Manifest {
 public:
     Manifest() = default;
 
-    // Parse from string
+    // Parse from string. A chain is resolved and its checkpoints verified;
+    // a bare C4 ID at end of input throws TrailingIDError (a wrong one is a
+    // checkpoint mismatch first). The same holds for ParseFile and the
+    // stream form.
     static Manifest Parse(std::string_view data);
 
     // Parse from file
@@ -296,10 +317,15 @@ DiffResult Diff(const Manifest &a, const Manifest &b);
 // EntryPaths builds a map from full path to entry pointer.
 std::map<std::string, const Entry *> EntryPaths(const std::vector<Entry> &entries);
 
-// EncodePatch encodes a PatchResult as c4m text (oldID + entries + newID).
+// EncodePatch encodes a PatchResult as c4m text: the old state's ID as the
+// boundary, then the entries, nothing after. The new state's ID is never
+// written: a c4m file never ends with its own ID (2026-11-08); the patch
+// resolves to pr.newID.
 std::string EncodePatch(const PatchResult &pr);
 
-// DecodePatchChain parses c4m text into sections separated by bare C4 ID lines.
+// DecodePatchChain parses c4m text into sections separated by bare C4 ID
+// lines, without resolving or verifying them. A bare C4 ID at end of input
+// throws TrailingIDError.
 std::vector<PatchSection> DecodePatchChain(std::istream &input);
 std::vector<PatchSection> DecodePatchChain(std::string_view data);
 

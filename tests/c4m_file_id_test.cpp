@@ -108,8 +108,18 @@ TEST_CASE("file ID: every identify path gives a c4m file its byte ID", "[c4m][fi
 TEST_CASE("file ID: a parseable non-canonical c4m's byte ID is not its description ID", "[c4m][file-id]") {
     // The c4m diff chain parses on every line, so this is the case where a
     // re-render would change the ID; the description ID is still there.
+    // Written by c4 1.0.27's `c4 diff`, it ends with the new state's bare
+    // ID, a shape refused since 2026-11-08 (TrailingIDError); without that
+    // line it is a valid chain resolving to the ID the line named. Its byte
+    // ID is its bytes either way.
     const std::string bytes = readAll(fixture("diff-chain.c4m"));
-    auto m = c4m::Manifest::Parse(bytes);
+    CHECK_THROWS_AS(c4m::Manifest::Parse(bytes), c4m::TrailingIDError);
+
+    std::string body = bytes.substr(0, bytes.size() - 1);
+    const std::string dropped = body.substr(body.rfind('\n') + 1);
+    body.resize(body.rfind('\n') + 1);
+    auto m = c4m::Manifest::Parse(body);
+    CHECK(m.ComputeC4ID().String() == dropped);
     CHECK(m.ComputeC4ID().String() != kByteID.at("diff-chain.c4m"));
     CHECK(c4::ID::IdentifyFile(fixture("diff-chain.c4m")).String() == kByteID.at("diff-chain.c4m"));
 }
