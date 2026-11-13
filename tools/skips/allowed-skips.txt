@@ -1,0 +1,6 @@
+# Tests allowed to skip in CI, one per line: the OS (linux, darwin,
+# windows, or "*" for any), then the test's name as ctest and Catch2 give
+# it, with why after "#". A skip, or a Catch2 test hidden with [.], that is
+# not listed for the OS fails CI (tools/skips/check.py; decided 2026-11-13
+# by the release lead; reversible). A shared-vector (conformance) test may
+# be listed only for an OS where its condition genuinely holds.
