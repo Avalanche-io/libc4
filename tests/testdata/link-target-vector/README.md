@@ -55,9 +55,33 @@ tree's ID holding the same entries, with these targets and links:
   mtime is the epoch; the two `epoch-link` entries are exactly what it
   writes for one, dangling and live.
 
-## Not covered: unruled
+## A flow-shaped target under a null mode
 
 A symlink whose target has the shape of a flow target (`host:path`,
-`C:foo`) cannot be told from a flow link when the mode is null; the Go
-decoder reads it as a flow link. That reading awaits a ruling and is not
-pinned here (`TestNullModeLinkWithAFlowShapedTargetIsUnruled`).
+`C:foo`) cannot be told from a flow link when the mode is null. Ruled
+2026-11-13 (decided by the release lead; reversible): under a null mode the
+line is a flow link, and a writer keeps a symlink's type by writing its mode
+`lrwxrwxrwx` even when the rest of the mode is null (the content
+projection does). `TestAFlowShapedTargetIsALinkOnlyUnderASymlinkMode` pins
+both readings.
+
+## Round trip
+
+Each file decoded and then encoded canonically. Go's
+`TestVectorRoundTrip` reads this table, and every port runs the same
+check, comparing SHA-512 of the bytes:
+
+- `itself`: the output is the file, byte for byte.
+- A file name: the output is that file, byte for byte.
+- `ID in` a file: a chain; the resolved state has that C4 ID.
+- `refused`: decoding fails.
+
+A file that is not canonical by design re-encodes to a canonical partner
+the library wrote; `C4M_UPDATE_VECTORS=1 go test ./c4m -run
+TestVectorRoundTrip` rewrites the partners.
+
+| File            | Re-encodes to   |
+| --------------- | --------------- |
+| `canonical.c4m` | itself          |
+| `patch.c4m`     | itself          |
+| `pretty.c4m`    | `canonical.c4m` |

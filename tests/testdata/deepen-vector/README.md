@@ -65,3 +65,23 @@ Timestamps in the fixtures are fixed constants — the files are
 byte-stable forever; apart from the 2026-11-08 removal of the trailing
 ID line, regenerating them is never necessary and never permitted
 (they are the contract).
+
+## Round trip
+
+Each file decoded and then encoded canonically. Go's
+`TestVectorRoundTrip` reads this table, and every port runs the same
+check, comparing SHA-512 of the bytes:
+
+- `itself`: the output is the file, byte for byte.
+- A file name: the output is that file, byte for byte.
+- `ID in` a file: a chain; the resolved state has that C4 ID.
+- `refused`: decoding fails.
+
+A file that is not canonical by design re-encodes to a canonical partner
+the library wrote; `C4M_UPDATE_VECTORS=1 go test ./c4m -run
+TestVectorRoundTrip` rewrites the partners.
+
+| File         | Re-encodes to              |
+| ------------ | -------------------------- |
+| `deepen.c4m` | ID in `deepen-root-id.txt` |
+| `remove.c4m` | ID in `remove-root-id.txt` |
