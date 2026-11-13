@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -82,7 +83,9 @@ std::vector<Reader> readers() {
          }},
         {"Manifest::ParseFile",
          [](const std::string &t) {
-             auto p = std::filesystem::temp_directory_path() / "libc4-trailing-id-test.c4m";
+             // A name of its own: ctest runs test cases as parallel processes.
+             auto p = std::filesystem::temp_directory_path() /
+                      ("libc4-trailing-id-test-" + std::to_string(std::random_device{}()) + ".c4m");
              {
                  std::ofstream f(p, std::ios::binary);
                  f << t;
@@ -187,10 +190,17 @@ TEST_CASE("chain-vector: a correct trailing ID is refused on every reader", "[c4
         }
     }
 
-    // Blank lines after the ID do not hide it.
+    // Blank lines after the ID neither hide it nor move the reported line:
+    // the error names the line the bare ID is on, the one to delete.
     for (const auto &r : readers()) {
         INFO(r.name);
-        CHECK_THROWS_AS(r.read(text + "\n\n"), c4m::TrailingIDError);
+        try {
+            r.read(text + "\n\n");
+            FAIL("accepted");
+        } catch (const c4m::TrailingIDError &e) {
+            CHECK(e.line() == 4);
+            CHECK_THAT(e.what(), ContainsSubstring("(line 4)"));
+        }
     }
 }
 
