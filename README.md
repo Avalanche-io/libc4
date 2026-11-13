@@ -39,6 +39,9 @@ Requires:
 - C++17 compiler
 - OpenSSL (for SHA-512)
 
+Built and tested on Linux and macOS. Not tested on Windows: the CMake file
+has a hook for vcpkg's toolchain there, but no CI job builds or tests it.
+
 ## API
 
 ### C++ API
