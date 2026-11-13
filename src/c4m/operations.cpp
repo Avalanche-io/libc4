@@ -502,8 +502,14 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
                                              current.baseID.String() + " then " + id.String());
                 last_id_line = line_num;
             } else {
-                // Flush current section
-                if (!current.entries.empty())
+                // Flush current section. A first section that carries the
+                // external base is kept even with no entries: a checkpoint
+                // directly after the first-line base names the base's
+                // resolved state, and dropping the section would lose the
+                // base, so a caller would fetch the checkpoint's ID as if it
+                // were the base. The two IDs need not agree: one names a
+                // block's bytes, the other a state (Go reference, c4 #144).
+                if (!current.entries.empty() || (sections.empty() && !current.baseID.IsNil()))
                     sections.push_back(std::move(current));
                 current = PatchSection();
                 current.baseID = id;

@@ -280,3 +280,26 @@ TEST_CASE("chain shape: a directive line is refused, naming the line", "[c4m][ch
         CHECK_THROWS_WITH(r.read(text), "c4m: directives not supported (line 2): @c4m 1.0");
     }
 }
+
+TEST_CASE("chain shape: a first-line base before a checkpoint is kept", "[c4m][chain][vector]") {
+    // A checkpoint directly after the first-line base names the base's
+    // resolved state. The shape reader used to drop the empty first section
+    // and with it the base, so a caller fetched the checkpoint's ID as the
+    // base (Go reference, c4 #144). The two IDs need not agree: one names a
+    // block's bytes, the other a state.
+    auto ls = lines(readAll(fixture("vector.c4m")));
+    REQUIRE(ls.size() == 3);
+    const std::string base = readTrimmed(fixture("resolved-root-id.txt"));
+    REQUIRE(base != ls[1]);
+    const std::string text = base + "\n" + ls[1] + "\n" + ls[2] + "\n";
+
+    std::istringstream in(text);
+    for (const auto &sections : {c4m::DecodePatchChain(std::string_view(text)), c4m::DecodePatchChain(in)}) {
+        REQUIRE(sections.size() == 2);
+        CHECK(sections[0].baseID.String() == base);
+        CHECK(sections[0].entries.empty());
+        CHECK(sections[1].baseID.String() == ls[1]);
+        REQUIRE(sections[1].entries.size() == 1);
+        CHECK(sections[1].entries[0].name == "b.txt");
+    }
+}
