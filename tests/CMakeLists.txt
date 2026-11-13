@@ -154,3 +154,11 @@ target_link_libraries(c4m_sequence_null_size_vector_test PRIVATE c4 Catch2::Catc
 target_compile_definitions(c4m_sequence_null_size_vector_test PRIVATE
     C4M_SEQUENCE_NULL_SIZE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/sequence-null-size-vector")
 catch_discover_tests(c4m_sequence_null_size_vector_test)
+
+# Every c4m file in every vendored shared vector re-encodes to the same
+# bytes, compared by OpenSSL's SHA-512, not libc4's C4 ID code (2026-11-13).
+add_executable(c4m_vector_bytes_test c4m_vector_bytes_test.cpp)
+target_link_libraries(c4m_vector_bytes_test PRIVATE c4 OpenSSL::Crypto Catch2::Catch2WithMain)
+target_compile_definitions(c4m_vector_bytes_test PRIVATE
+    C4M_TESTDATA_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+catch_discover_tests(c4m_vector_bytes_test)
