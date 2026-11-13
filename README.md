@@ -24,7 +24,7 @@ This library provides:
 - **Tree IDs** — compute a single ID for a set of IDs
 - **C4M format** — parse and generate `.c4m` files
 - **C4M operations** — diff, merge, intersect manifests
-- **Dual API** — C API (`c4.h`) for maximum portability, C++ API (`c4.hpp`) for ergonomics
+- **Dual API for C4 IDs** — C API (`c4.h`) for maximum portability, C++ API (`c4.hpp`) for ergonomics; the c4m API is C++ only (`c4m.hpp`)
 
 ## Building
 
@@ -83,6 +83,14 @@ printf("%s\n", buf);
 
 c4_id_free(id);
 ```
+
+The C API covers C4 IDs and tree IDs (`c4.h`); every function it declares
+is linked and called by `tests/c_api_link_test.c`, and the build checks that
+no declaration is missing from that test. There is no C API for c4m files:
+until 2026-11-13 `include/c4/c4m.h` declared one (`c4m_parse`,
+`c4m_encode_patch`, `c4m_merge` and others) that was never implemented, so
+nothing could link against it. It was removed rather than left promising
+functions that do not exist. Use the C++ API (`c4m.hpp`).
 
 ## Cross-language compatibility
 

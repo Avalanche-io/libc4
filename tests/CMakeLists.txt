@@ -102,3 +102,16 @@ target_link_libraries(c4m_file_id_test PRIVATE c4 Catch2::Catch2WithMain)
 target_compile_definitions(c4m_file_id_test PRIVATE
     C4M_FILE_ID_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/file-id")
 catch_discover_tests(c4m_file_id_test)
+
+# Every function a public C header declares links, and the headers compile
+# as C (2026-11-13). The second test fails if a header declares a function
+# the link test does not name.
+add_executable(c_api_link_test c_api_link_test.c)
+set_target_properties(c_api_link_test PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(c_api_link_test PRIVATE c4)
+add_test(NAME c_api_link_test COMMAND c_api_link_test)
+add_test(NAME c_api_declared
+    COMMAND ${CMAKE_COMMAND}
+        -DINCLUDE_DIR=${PROJECT_SOURCE_DIR}/include/c4
+        -DLINK_TEST=${CMAKE_CURRENT_SOURCE_DIR}/c_api_link_test.c
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/c_api_declared.cmake)
