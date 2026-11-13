@@ -401,7 +401,10 @@ std::string EncodePatch(const PatchResult &pr) {
     std::string out;
     out.reserve(4096);
 
-    // Old ID (page boundary)
+    // Old ID (page boundary). This is the stream's first line, so a base the
+    // patch manifest carries is never written a second time: the entries
+    // below are written directly, not through Manifest::Encode, which writes
+    // a set base first (c4 #145, 2026-11-13).
     if (!pr.oldID.IsNil()) {
         out += pr.oldID.String();
         out += '\n';

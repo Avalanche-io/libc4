@@ -28,8 +28,17 @@ std::string Manifest::Encode() const {
     std::string out;
     out.reserve(4096);
 
-    // Entry-only output (no @c4m header, no @base directive).
-    // This matches the Go reference encoder which produces entries only.
+    // A first-line bare ID is the external base this description refines
+    // (SPECIFICATION.md, external base reference). Parse keeps it in Base();
+    // writing it back keeps the round trip honest. Through 2026-11-13 it was
+    // dropped, so encoding a decoded block turned it into a standalone
+    // description of its own entries (c4 #145). A manifest with no base
+    // encodes exactly as before: entries only, no @c4m header.
+    if (!copy.Base().IsNil()) {
+        out += copy.Base().String();
+        out += '\n';
+    }
+
     for (const auto &entry : copy.Entries()) {
         out += entry.Format(2);
         out += '\n';

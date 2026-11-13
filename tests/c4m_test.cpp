@@ -823,13 +823,49 @@ TEST_CASE("C4M: encode single file", "[c4m][encoder]") {
     REQUIRE(out.find("-rw-r--r-- 2024-01-01T00:00:00Z 100 file.txt") != std::string::npos);
 }
 
-TEST_CASE("C4M: encode does not emit base", "[c4m][encoder]") {
+TEST_CASE("C4M: encode does not emit an @base directive", "[c4m][encoder]") {
     c4m::Manifest m;
     auto id = c4::ID::Identify("test");
     m.SetBase(id);
 
     std::string out = m.Encode();
     REQUIRE(out.find("@base") == std::string::npos);
+}
+
+// A description that names an external base keeps it through encode and
+// decode (c4 #145). Through 2026-11-13 the encoder dropped Base(), so Parse
+// then Encode turned a block on a base into a standalone description of the
+// block's own entries.
+TEST_CASE("C4M: encode keeps the external base", "[c4m][encoder][base]") {
+    const auto base = c4::ID::Identify(std::string_view("prior block"));
+    c4m::Entry e;
+    e.mode = c4m::ParseMode("-rw-r--r--");
+    e.timestamp = c4m::ParseTimestamp("2026-01-01T00:00:00Z");
+    e.size = 1;
+    e.name = "a.txt";
+    e.id = c4::ID::Identify(std::string_view("a"));
+    const std::string entry = e.Canonical() + "\n";
+    const std::string text = base.String() + "\n" + entry;
+
+    auto m = c4m::Manifest::Parse(std::string_view(text));
+    REQUIRE(m.Base() == base);
+    REQUIRE(m.EntryCount() == 1);
+
+    // The base is the first line, and nothing else changes.
+    const std::string out = m.Encode();
+    REQUIRE(out == text);
+
+    auto back = c4m::Manifest::Parse(std::string_view(out));
+    REQUIRE(back.Base() == base);
+    REQUIRE(back.EntryCount() == 1);
+    REQUIRE(back.Entries()[0].name == "a.txt");
+
+    // The description ID does not depend on the base.
+    REQUIRE(back.ComputeC4ID() == m.ComputeC4ID());
+
+    // A manifest with no base encodes exactly as before: no bare line.
+    m.SetBase(c4::ID());
+    REQUIRE(m.Encode() == entry);
 }
 
 TEST_CASE("C4M: encode sorts entries", "[c4m][encoder]") {

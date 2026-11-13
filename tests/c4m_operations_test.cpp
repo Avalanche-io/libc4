@@ -286,6 +286,26 @@ TEST_CASE("EncodePatch: basic structure", "[c4m][ops]") {
     REQUIRE(last.find("b.txt") != std::string::npos);
 }
 
+// EncodePatch's first line is its old ID; a base the patch manifest carries
+// is not written a second time, and the caller's manifest keeps it (c4 #145).
+TEST_CASE("EncodePatch: writes one first line when the patch carries a base", "[c4m][ops][base]") {
+    c4m::PatchResult pr;
+    pr.oldID = c4::ID::Identify(std::string_view("old state"));
+    pr.patch.SetBase(c4::ID::Identify(std::string_view("other")));
+    pr.patch.AddEntry(makeFile("a.txt", 1));
+
+    const std::string out = c4m::EncodePatch(pr);
+    std::vector<std::string> lines;
+    std::istringstream in(out);
+    for (std::string l; std::getline(in, l);)
+        lines.push_back(l);
+    REQUIRE(lines.size() == 2);
+    REQUIRE(lines[0] == pr.oldID.String());
+    REQUIRE(lines[1].find("a.txt") != std::string::npos);
+    REQUIRE(out.find(pr.patch.Base().String()) == std::string::npos);
+    REQUIRE_FALSE(pr.patch.Base().IsNil());
+}
+
 TEST_CASE("EncodePatch: appended to its base, resolves to the new ID", "[c4m][ops]") {
     // The `c4 id > f; c4 diff f dir >> f` shape: the chain resolves to the
     // new state and every reader accepts it.

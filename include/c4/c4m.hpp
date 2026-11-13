@@ -149,7 +149,9 @@ public:
     // Parse from stream
     static Manifest Parse(std::istream &stream);
 
-    // Encode to canonical c4m format (entry-only, no header)
+    // Encode to canonical c4m format (no header). A set Base() is written
+    // first, as the bare-ID line that names the external base; without one
+    // the output is the entries only.
     std::string Encode() const;
 
     // Write to file
