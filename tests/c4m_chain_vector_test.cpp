@@ -245,3 +245,38 @@ TEST_CASE("chain-vector: a file that is only a base reference is not a trailing 
     REQUIRE_NOTHROW(sections = c4m::DecodePatchChain(std::string_view(text)));
     CHECK(sections.empty());
 }
+
+TEST_CASE("chain shape: consecutive checkpoints that disagree are refused", "[c4m][chain][vector]") {
+    // Two boundaries with no entries between them name the same state. The
+    // shape reader cannot verify either, but it refuses a pair that
+    // disagrees, naming the line and both IDs (Go reference, 2026-11-09).
+    auto ls = lines(readAll(fixture("vector.c4m")));
+    REQUIRE(ls.size() == 3);
+    const std::string other = readTrimmed(fixture("resolved-root-id.txt"));
+    REQUIRE(other != ls[1]);
+    const std::string text = ls[0] + "\n" + ls[1] + "\n" + other + "\n" + ls[2] + "\n";
+
+    for (const auto &r : readers()) {
+        INFO(r.name);
+        CHECK_THROWS_WITH(r.read(text), ContainsSubstring("patch ID mismatch (line 3)"));
+    }
+    for (const auto &r : readers()) {
+        if (r.name.rfind("DecodePatchChain", 0) != 0)
+            continue;
+        INFO(r.name);
+        CHECK_THROWS_WITH(r.read(text),
+                          "c4m: patch ID mismatch (line 3): consecutive checkpoints disagree: " + ls[1] +
+                              " then " + other);
+    }
+}
+
+TEST_CASE("chain shape: a directive line is refused, naming the line", "[c4m][chain][vector]") {
+    auto ls = lines(readAll(fixture("vector.c4m")));
+    REQUIRE(ls.size() == 3);
+    const std::string text = ls[0] + "\n@c4m 1.0\n" + ls[2] + "\n";
+
+    for (const auto &r : readers()) {
+        INFO(r.name);
+        CHECK_THROWS_WITH(r.read(text), "c4m: directives not supported (line 2): @c4m 1.0");
+    }
+}

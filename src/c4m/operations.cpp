@@ -475,9 +475,12 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
         if (isInlineIDList(trimmed))
             continue;
 
-        // Skip directives
+        // Directive lines are refused, naming the line, as Manifest::Parse and
+        // the Go reference's DecodePatchChain do. Through 1.0.x this reader
+        // skipped them, so a file Parse refuses read here as a valid chain.
         if (trimmed[0] == '@')
-            continue;
+            throw std::runtime_error("c4m: directives not supported (line " +
+                                     std::to_string(line_num) + "): " + line);
 
         if (isBareC4ID(trimmed)) {
             c4::ID id = c4::ID::Parse(trimmed);
@@ -486,8 +489,17 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
                 // First bare ID: external base reference
                 current.baseID = id;
             } else if (current.entries.empty() && !sections.empty()) {
-                // Consecutive bare IDs: update base
-                current.baseID = id;
+                // Consecutive bare IDs with no entries between them are
+                // checkpoint repetition: both name the same accumulated
+                // state, so they must be the same ID. This reader does not
+                // resolve, so it cannot verify either against the state, but
+                // it refuses a pair that disagrees instead of silently
+                // keeping the second (as the Go reference does since
+                // 2026-11-09).
+                if (current.baseID != id)
+                    throw std::runtime_error("c4m: patch ID mismatch (line " + std::to_string(line_num) +
+                                             "): consecutive checkpoints disagree: " +
+                                             current.baseID.String() + " then " + id.String());
                 last_id_line = line_num;
             } else {
                 // Flush current section
