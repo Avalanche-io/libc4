@@ -4,3 +4,7 @@
 # not listed for the OS fails CI (tools/skips/check.py; decided 2026-11-13
 # by the release lead; reversible). A shared-vector (conformance) test may
 # be listed only for an OS where its condition genuinely holds.
+#
+# Measured 2026-11-13 in report mode on a developer's Mac and on every CI
+# leg (ubuntu-latest and macos-latest, CMake 4.4.5, Catch2 v3.7.1): no test
+# skipped and none was hidden, so nothing is listed.
