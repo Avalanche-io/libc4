@@ -92,3 +92,11 @@ target_link_libraries(c4m_file_id_test PRIVATE c4 Catch2::Catch2WithMain)
 target_compile_definitions(c4m_file_id_test PRIVATE
     C4M_FILE_ID_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/file-id")
 catch_discover_tests(c4m_file_id_test)
+
+# A folded range's ID list survives decode and canonical encode (data-loss
+# fix back-ported to 1.0.27, 2026-11-13); the fixture is Go's at 1.0.27.
+add_executable(c4m_range_data_test c4m_range_data_test.cpp)
+target_link_libraries(c4m_range_data_test PRIVATE c4 OpenSSL::Crypto Catch2::Catch2WithMain)
+target_compile_definitions(c4m_range_data_test PRIVATE
+    C4M_RANGE_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/range-data")
+catch_discover_tests(c4m_range_data_test)
