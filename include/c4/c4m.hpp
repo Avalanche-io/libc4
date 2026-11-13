@@ -377,7 +377,11 @@ std::string FormatTimestamp(int64_t unix_seconds);
 int64_t ParseTimestamp(const std::string &s);
 
 // SafeName encoding (Universal Filename Encoding, three-tier system).
-// Tier 1: printable UTF-8 passthrough (except currency sign U+00A4 and backslash)
+// Tier 1: printable UTF-8 passthrough (except currency sign U+00A4 and backslash).
+//   Printable is Go's unicode.IsPrint pinned to Unicode 17.0.0 (letters,
+//   marks, numbers, punctuation, symbols, and U+0020), read from an
+//   embedded table, never from the platform, so a name encodes the same
+//   way on every build.
 // Tier 2: backslash escapes: \0, \t, \n, \r, \\
 // Tier 3: non-printable bytes as braille U+2800-U+28FF between currency sign delimiters
 std::string SafeName(const std::string &raw);

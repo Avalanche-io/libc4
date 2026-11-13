@@ -104,6 +104,27 @@ target_compile_definitions(c4m_null_size_vector_test PRIVATE
     C4M_NULL_SIZE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/null-size-vector")
 catch_discover_tests(c4m_null_size_vector_test)
 
+# SafeName pinned to Unicode 17.0.0 and the shared SafeName vector
+# (2026-11-13).
+add_executable(c4m_safename_vector_test c4m_safename_vector_test.cpp)
+target_link_libraries(c4m_safename_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_safename_vector_test PRIVATE
+    C4M_SAFENAME_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/safename-vector")
+catch_discover_tests(c4m_safename_vector_test)
+
+# The checked-in printable table is what tools/gen_printable.cmake makes
+# from the shared text table.
+add_test(NAME printable_table_generated
+    COMMAND ${CMAKE_COMMAND}
+        -DTABLE=${CMAKE_CURRENT_SOURCE_DIR}/testdata/safename-vector/printable-17.0.0.txt
+        -DOUT=${CMAKE_CURRENT_BINARY_DIR}/printable_table.inc
+        -P ${PROJECT_SOURCE_DIR}/tools/gen_printable.cmake)
+add_test(NAME printable_table_matches
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+        ${CMAKE_CURRENT_BINARY_DIR}/printable_table.inc
+        ${PROJECT_SOURCE_DIR}/src/c4m/printable_table.inc)
+set_tests_properties(printable_table_matches PROPERTIES DEPENDS printable_table_generated)
+
 # A file's C4 ID is its bytes, on every identify path (2026-11-11).
 add_executable(c4m_file_id_test c4m_file_id_test.cpp)
 target_link_libraries(c4m_file_id_test PRIVATE c4 Catch2::Catch2WithMain)
