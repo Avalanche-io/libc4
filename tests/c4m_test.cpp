@@ -1476,3 +1476,49 @@ TEST_CASE("C4M: HasNullValues entry method", "[c4m][tree]") {
     e.mode = 0;
     REQUIRE(e.HasNullValues());
 }
+
+// Inline range data (a folded sequence's ID list) survives decode and
+// encode. Through 2026-11-13 Parse discarded these lines, so a re-encoded
+// c4m file lost them and its bytes and byte ID differed from the input.
+// The manifest is built through the API; the lists are not part of its
+// identity, so the description ID is unchanged by them.
+TEST_CASE("C4M: inline range data survives decode and encode", "[c4m][sequence]") {
+    std::string list;
+    for (const char *frame : {"frame1", "frame2", "frame3"})
+        list += c4::ID::Identify(std::string_view(frame)).String();
+    const c4::ID seqID = c4::ID::Identify(std::string_view(list));
+
+    c4m::Manifest m;
+    c4m::Entry e;
+    e.mode = 0644;
+    e.timestamp = c4m::ParseTimestamp("2026-03-06T12:00:00Z");
+    e.size = 18;
+    e.name = "shot.[1001-1003].exr";
+    e.is_sequence = true;
+    e.id = seqID;
+    m.AddEntry(e);
+    const c4::ID withoutLists = m.ComputeC4ID();
+    m.SetRangeData(seqID, list);
+
+    const std::string text = m.Encode();
+    REQUIRE(text.size() > list.size());
+    REQUIRE(text.compare(text.size() - list.size() - 1, list.size() + 1, list + "\n") == 0);
+
+    auto decoded = c4m::Manifest::Parse(std::string_view(text));
+    REQUIRE(decoded.RangeData() == m.RangeData());
+    REQUIRE(decoded.Encode() == text);
+    REQUIRE(decoded.ComputeC4ID() == withoutLists);
+    REQUIRE(decoded.Copy().RangeData() == m.RangeData());
+
+    // A patch applied over it keeps the lists of both sides.
+    c4m::Manifest patch;
+    c4m::Entry f;
+    f.mode = 0644;
+    f.timestamp = e.timestamp;
+    f.size = 5;
+    f.name = "notes.txt";
+    f.id = c4::ID::Identify(std::string_view("notes"));
+    patch.AddEntry(f);
+    auto applied = c4m::ApplyPatch(decoded, patch);
+    REQUIRE(applied.RangeData() == m.RangeData());
+}

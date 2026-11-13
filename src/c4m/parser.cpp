@@ -596,9 +596,13 @@ Manifest Manifest::Parse(std::istream &stream) {
         if (trimmed.empty())
             continue;
 
-        // Skip inline ID lists (range data lines, not entries)
-        if (isInlineIDList(trimmed))
+        // Inline ID lists are range data, not entries: kept, keyed by the
+        // list's C4 ID. Through 1.0.27's first cut they were skipped, so a
+        // re-encoded c4m file lost its frame IDs.
+        if (isInlineIDList(trimmed)) {
+            m.SetRangeData(c4::ID::Identify(std::string_view(trimmed)), trimmed);
             continue;
+        }
 
         // Skip bare C4 ID lines (patch boundaries -- not yet supported in C++ impl)
         if (isBareC4ID(trimmed))
