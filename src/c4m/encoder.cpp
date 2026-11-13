@@ -44,6 +44,20 @@ std::string Manifest::Encode() const {
         out += '\n';
     }
 
+    // Inline range data trails the entries, sorted by the string form of
+    // each list's C4 ID (Go's encoder sorts the same way). Through
+    // 2026-11-13 Parse discarded these lines, so a folded sequence's ID list
+    // was lost on the round trip (sequence-null-size vector, c4 7a6ba94).
+    std::vector<std::pair<std::string, const std::string *>> lists;
+    lists.reserve(copy.RangeData().size());
+    for (const auto &kv : copy.RangeData())
+        lists.emplace_back(kv.first.String(), &kv.second);
+    std::sort(lists.begin(), lists.end());
+    for (const auto &kv : lists) {
+        out += *kv.second;
+        out += '\n';
+    }
+
     return out;
 }
 

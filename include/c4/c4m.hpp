@@ -233,6 +233,15 @@ public:
     void SetVersion(const std::string &v) { version_ = v; }
     void SetBase(const c4::ID &id) { base_ = id; }
 
+    // Inline range data: a folded sequence's ID list (the bare concatenation
+    // of its members' C4 IDs, 90 characters each), keyed by the list's C4
+    // ID, which is the sequence entry's C4 ID (SPECIFICATION.md, "Inline
+    // Range Data"). Parse keeps the lines that trail the entries; Encode
+    // writes them back after the entries, sorted by ID, as Go's encoder
+    // does. They are not part of the manifest's identity.
+    const std::map<c4::ID, std::string> &RangeData() const { return range_data_; }
+    void SetRangeData(const c4::ID &id, const std::string &list) { range_data_[id] = list; }
+
     // Remove entry (and descendants if directory) from the manifest.
     void RemoveEntry(const Entry *e);
 
@@ -260,6 +269,7 @@ private:
     std::string version_ = "1.0";
     std::vector<Entry> entries_;
     c4::ID base_;
+    std::map<c4::ID, std::string> range_data_;
     mutable std::unique_ptr<TreeIndex> index_;
 
     const TreeIndex &ensureIndex() const;

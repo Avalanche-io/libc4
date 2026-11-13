@@ -306,6 +306,7 @@ Manifest Manifest::Copy() const {
     cp.version_ = version_;
     cp.base_ = base_;
     cp.entries_ = entries_;
+    cp.range_data_ = range_data_;
     return cp;
 }
 

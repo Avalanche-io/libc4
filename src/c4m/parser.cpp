@@ -650,6 +650,7 @@ Manifest Manifest::Parse(std::istream &stream) {
     bool first_line = true;
     bool patch_mode = false;
     int last_checkpoint_line = 0; // line of the last bare ID if nothing followed it
+    std::map<c4::ID, std::string> range_data;
 
     std::string line;
     while (readLine(stream, line, line_num)) {
@@ -665,9 +666,13 @@ Manifest Manifest::Parse(std::istream &stream) {
         if (trimmed.empty())
             continue;
 
-        // Skip inline ID lists (range data lines, not entries or boundaries).
-        if (isInlineIDList(trimmed))
+        // Inline ID lists are range data, not entries or boundaries: kept,
+        // keyed by the list's C4 ID, and set on the result once the chain
+        // is resolved.
+        if (isInlineIDList(trimmed)) {
+            range_data[c4::ID::Identify(std::string_view(trimmed))] = trimmed;
             continue;
+        }
 
         // Bare C4 ID line: patch boundary (base reference or checkpoint).
         if (isBareC4ID(trimmed)) {
@@ -721,6 +726,8 @@ Manifest Manifest::Parse(std::istream &stream) {
     // it (C4M-STANDARD 10.7).
     applyChainSection(m, section, patch_mode);
 
+    for (const auto &kv : range_data)
+        m.SetRangeData(kv.first, kv.second);
     return m;
 }
 
