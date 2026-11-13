@@ -162,3 +162,9 @@ target_link_libraries(c4m_vector_bytes_test PRIVATE c4 OpenSSL::Crypto Catch2::C
 target_compile_definitions(c4m_vector_bytes_test PRIVATE
     C4M_TESTDATA_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 catch_discover_tests(c4m_vector_bytes_test)
+
+# A flow-shaped link target reads as a flow link under a null mode and as a
+# symlink under lrwxrwxrwx (ruled 2026-11-13; c4 #158 at 7cdc9f3).
+add_executable(c4m_flow_shaped_target_test c4m_flow_shaped_target_test.cpp)
+target_link_libraries(c4m_flow_shaped_target_test PRIVATE c4 Catch2::Catch2WithMain)
+catch_discover_tests(c4m_flow_shaped_target_test)
