@@ -96,6 +96,14 @@ target_compile_definitions(c4m_name_escape_vector_test PRIVATE
     C4M_NAME_ESCAPE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/name-escape-vector")
 catch_discover_tests(c4m_name_escape_vector_test)
 
+# Cross-implementation null-size conformance test (2026-11-13): a size of 0
+# beside a C4 ID other than the empty content's is a null size.
+add_executable(c4m_null_size_vector_test c4m_null_size_vector_test.cpp)
+target_link_libraries(c4m_null_size_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_null_size_vector_test PRIVATE
+    C4M_NULL_SIZE_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/null-size-vector")
+catch_discover_tests(c4m_null_size_vector_test)
+
 # A file's C4 ID is its bytes, on every identify path (2026-11-11).
 add_executable(c4m_file_id_test c4m_file_id_test.cpp)
 target_link_libraries(c4m_file_id_test PRIVATE c4 Catch2::Catch2WithMain)

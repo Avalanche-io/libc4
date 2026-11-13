@@ -338,18 +338,20 @@ void Manifest::Canonicalize() {
         // lives under that ID, not here, so its size cannot be derived and
         // stays null. Through 2026-11-11 any non-nil ID gave 0, an invented
         // value ComputeC4ID then hashed (childless-dir vector).
+        // An empty listing's ID is EmptyContentID(), the ID of zero bytes.
+        // A size of 0 beside a C4 ID other than that is a null size too
+        // (ruled 2026-11-08; Entry::SizeIsNull), here and for every child.
         if (kids.empty()) {
-            static const c4::ID empty_listing_id = c4::ID::Identify(std::string_view(""));
-            if (entry.size < 0 && entry.id == empty_listing_id)
+            if (entry.SizeIsNull() && entry.id == EmptyContentID())
                 entry.size = 0;
             continue;
         }
 
-        if (entry.size < 0) {
+        if (entry.SizeIsNull()) {
             int64_t total = 0;
             bool has_null = false;
             for (const Entry *k : kids) {
-                if (k->size < 0) { has_null = true; break; }
+                if (k->SizeIsNull()) { has_null = true; break; }
                 total += k->size;
             }
             if (!has_null) {

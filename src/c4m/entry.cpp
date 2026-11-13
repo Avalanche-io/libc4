@@ -58,13 +58,24 @@ bool Entry::IsSymlink() const {
     return (mode & ModeSymlink) != 0;
 }
 
+const c4::ID &EmptyContentID() {
+    static const c4::ID id = c4::ID::Identify(std::string_view(""));
+    return id;
+}
+
+bool Entry::SizeIsNull() const {
+    if (size < 0)
+        return true;
+    return size == 0 && !id.IsNil() && !(id == EmptyContentID()) && !IsSymlink();
+}
+
 bool Entry::HasNullValues() const {
     // mode == 0 is null; the known zero is ZeroMode. Directory-ness comes
     // from the trailing "/" in the name, so a null-mode directory is still
     // a null.
     bool null_mode = IsNullMode(mode);
     bool null_ts = (timestamp == NullTimestamp);
-    bool null_sz = (size < 0);
+    bool null_sz = SizeIsNull();
     return null_mode || null_ts || null_sz;
 }
 
@@ -284,7 +295,9 @@ std::string Entry::Canonical() const {
     line += FormatTimestamp(timestamp);
     line += ' ';
 
-    if (size < 0)
+    // A 0 the C4 ID contradicts is null too (SizeIsNull), so "0 f <ID>" and
+    // "- f <ID>" are one description with one ID.
+    if (SizeIsNull())
         line += '-';
     else
         line += std::to_string(size);
@@ -337,7 +350,9 @@ std::string Entry::Format(int indent_width) const {
     line += FormatTimestamp(timestamp);
     line += ' ';
 
-    if (size < 0)
+    // A 0 the C4 ID contradicts is null too (SizeIsNull), so "0 f <ID>" and
+    // "- f <ID>" are one description with one ID.
+    if (SizeIsNull())
         line += '-';
     else
         line += std::to_string(size);

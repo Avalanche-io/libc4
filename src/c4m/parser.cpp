@@ -569,6 +569,12 @@ static Entry parseEntryFields(const std::string &line, int &indent_width, int li
         }
     }
 
+    // A 0 beside the C4 ID of non-empty content is a null size written by
+    // a surface that has no "-" (a mount); hold it as null so every consumer
+    // sees one value for one meaning (ruled 2026-11-08; c4 #68).
+    if (entry.SizeIsNull())
+        entry.size = NullSize;
+
     return entry;
 }
 

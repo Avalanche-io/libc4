@@ -74,6 +74,12 @@ constexpr int64_t NullTimestamp = 0;
 // Null sentinel: size -1 means "unspecified"
 constexpr int64_t NullSize = -1;
 
+// EmptyContentID is the C4 ID of zero bytes: the only C4 ID a size of 0 can
+// truthfully sit beside, and the ID of an empty directory's listing.
+// (Mirrors Go c4m.EmptyContentID; a function so it is safe to use during
+// static initialisation.)
+const c4::ID &EmptyContentID();
+
 // Flow link direction
 enum class FlowDirection {
     None = 0,        // No flow link
@@ -86,7 +92,7 @@ enum class FlowDirection {
 struct Entry {
     uint32_t mode = 0;         // Unix file mode (type + permission bits); 0 = null, ZeroMode = known zero
     int64_t timestamp = 0;     // Modification time (Unix seconds UTC), 0 = null
-    int64_t size = 0;          // File size in bytes, -1 = null
+    int64_t size = 0;          // File size in bytes, -1 = null (see SizeIsNull)
     std::string name;          // File or directory name (dirs end with '/')
     std::string target;        // Symlink target (empty if not a symlink)
     c4::ID id;                 // Content identifier
@@ -106,6 +112,16 @@ struct Entry {
     bool IsDir() const;
     bool IsSymlink() const;
     bool HasNullValues() const;
+
+    // SizeIsNull reports whether the size is unknown: -1, or a stated 0
+    // beside a C4 ID other than EmptyContentID() on an entry that is not a
+    // symlink. A filesystem surface has no "-", so a null size shows there
+    // as 0, and only the empty content has size 0 (ruled 2026-11-08;
+    // c4 #68). A 0 with no C4 ID is a known zero (a structure-level scan of
+    // an empty file); a symlink's size is the link's own and its C4 ID the
+    // target's, so it is exempt. This is the one test every size check
+    // asks.
+    bool SizeIsNull() const;
 
     // Return the flow operator string ("->", "<-", "<>", or "")
     std::string FlowOperator() const;
