@@ -5,6 +5,7 @@
 
 #include "c4/c4m.hpp"
 #include "entry_line.hpp"
+#include "range_data.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -726,8 +727,17 @@ Manifest Manifest::Parse(std::istream &stream) {
     // it (C4M-STANDARD 10.7).
     applyChainSection(m, section, patch_mode);
 
-    for (const auto &kv : range_data)
-        m.SetRangeData(kv.first, kv.second);
+    // A single section keeps every list it read, as Go's decoder does. A
+    // resolved chain keeps the lists of the ranges its state holds and no
+    // other, as Go's chain resolution does (c4 #159; range-data vector,
+    // remove-chain.c4m). Through 2026-11-16 a chain kept every list it
+    // carried, so a range a patch removed had its list written out.
+    if (patch_mode) {
+        detail::keepRangeData(m, {&range_data});
+    } else {
+        for (const auto &kv : range_data)
+            m.SetRangeData(kv.first, kv.second);
+    }
     return m;
 }
 
