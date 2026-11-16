@@ -5,6 +5,7 @@
 
 #include "c4/c4m.hpp"
 #include "entry_line.hpp"
+#include "range_data.hpp"
 
 #include <algorithm>
 #include <map>
@@ -317,11 +318,10 @@ Manifest ApplyPatch(const Manifest &base, const Manifest &patch) {
     for (auto &e : entries)
         result.AddEntry(std::move(e));
     result.SortEntries();
-    // Range data from both sides, the patch's winning, as Go's ApplyPatch.
-    for (const auto &kv : base.RangeData())
-        result.SetRangeData(kv.first, kv.second);
-    for (const auto &kv : patch.RangeData())
-        result.SetRangeData(kv.first, kv.second);
+    // The lists of the ranges the result holds, from either side, as Go's
+    // ApplyPatch (c4 #159). Through 2026-11-16 every list of both sides was
+    // kept, so a range the patch removed kept its list in the result.
+    detail::keepRangeData(result, {&base.RangeData(), &patch.RangeData()});
     return result;
 }
 
