@@ -346,7 +346,8 @@ DiffResult Diff(const Manifest &a, const Manifest &b);
 std::map<std::string, const Entry *> EntryPaths(const std::vector<Entry> &entries);
 
 // EncodePatch encodes a PatchResult as c4m text: the old state's ID as the
-// boundary, then the entries, nothing after. The new state's ID is never
+// boundary, then the entries, then the inline ID lists of the ranges the
+// patch adds or changes (pr.patch.RangeData()). The new state's ID is never
 // written: a c4m file never ends with its own ID (2026-11-08); the patch
 // resolves to pr.newID.
 std::string EncodePatch(const PatchResult &pr);

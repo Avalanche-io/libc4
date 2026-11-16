@@ -194,3 +194,17 @@ TEST_CASE("range data vector: a merge that removes the plate range drops its lis
     CHECK(r.merged.GetEntry("plate.[1001-1004].exr") == nullptr);
     CHECK(r.merged.Encode() == readAll(RD, "no-plate.c4m"));
 }
+
+TEST_CASE("range data vector: diff plain.c4m to folded.c4m is add.c4m, both lists after the entries",
+          "[c4m][vector][sequence][range-data][diff]") {
+    auto pr = c4m::PatchDiff(parse(RD, "plain.c4m"), parse(RD, "folded.c4m"));
+    CHECK(pr.patch.RangeData().size() == 2);
+    CHECK(c4m::EncodePatch(pr) == readAll(RD, "add.c4m"));
+}
+
+TEST_CASE("range data vector: diff folded.c4m to no-plate.c4m is remove.c4m, a removal takes no list",
+          "[c4m][vector][sequence][range-data][diff]") {
+    auto pr = c4m::PatchDiff(parse(RD, "folded.c4m"), parse(RD, "no-plate.c4m"));
+    CHECK(pr.patch.RangeData().empty());
+    CHECK(c4m::EncodePatch(pr) == readAll(RD, "remove.c4m"));
+}
