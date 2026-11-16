@@ -770,6 +770,13 @@ MergeResult Merge(const Manifest &base, const Manifest &local, const Manifest &r
         result.merged.AddEntry(std::move(e));
     }
 
+    // The merged state carries the ID list of every range it holds, from
+    // whichever input has it, and none for a range it does not, as a merge
+    // carries a subdirectory's listing (Go's Merge, c4 #159; range-data
+    // vector, merged.c4m). Through 2026-11-16 the result carried no lists,
+    // so every folded range lost its frames' C4 IDs.
+    detail::keepRangeData(result.merged, {&base.RangeData(), &local.RangeData(), &remote.RangeData()});
+
     result.conflicts = std::move(conflicts);
     return result;
 }

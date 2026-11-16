@@ -140,3 +140,42 @@ TEST_CASE("sequence size vector: expanded.c4m keeps the range at 303 and reads e
         CHECK(find(m, n)->size == c4m::NullSize);
     }
 }
+
+// ---- Operations: the vector's MUST rows for merge, diff and patch ----
+//
+// Each output, encoded canonically, is the named file byte for byte. A
+// two-way merge is a three-way merge over an empty base, as Go's
+// Merge(nil, a, b). A patch is written by EncodePatch, as c4 diff writes
+// it: the old state's C4 ID, then the entries, then the lists of the
+// ranges it adds or changes.
+
+TEST_CASE("range data vector: merge folded.c4m with plain.c4m, either order, is merged.c4m",
+          "[c4m][vector][sequence][range-data][merge]") {
+    const auto folded = parse(RD, "folded.c4m");
+    const auto plain = parse(RD, "plain.c4m");
+    for (int order = 0; order < 2; order++) {
+        INFO("order " << order);
+        auto r = order == 0 ? c4m::Merge(c4m::Manifest(), folded, plain)
+                            : c4m::Merge(c4m::Manifest(), plain, folded);
+        CHECK(r.conflicts.empty());
+        CHECK(r.merged.RangeData().size() == 2);
+        CHECK(r.merged.Encode() == readAll(RD, "merged.c4m"));
+    }
+}
+
+TEST_CASE("range data vector: merge folded.c4m with itself is folded.c4m",
+          "[c4m][vector][sequence][range-data][merge]") {
+    const auto folded = parse(RD, "folded.c4m");
+    auto r = c4m::Merge(c4m::Manifest(), folded, folded);
+    CHECK(r.conflicts.empty());
+    CHECK(r.merged.Encode() == readAll(RD, "folded.c4m"));
+}
+
+TEST_CASE("range data vector: a merge that removes the plate range drops its list",
+          "[c4m][vector][sequence][range-data][merge]") {
+    const auto folded = parse(RD, "folded.c4m");
+    auto r = c4m::Merge(folded, parse(RD, "no-plate.c4m"), folded);
+    CHECK(r.conflicts.empty());
+    CHECK(r.merged.GetEntry("plate.[1001-1004].exr") == nullptr);
+    CHECK(r.merged.Encode() == readAll(RD, "no-plate.c4m"));
+}
