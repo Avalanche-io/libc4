@@ -202,3 +202,30 @@ TEST_CASE("range data vector: diff folded.c4m to no-plate.c4m is remove.c4m, a r
     CHECK(asDiffWrites(pr) == readAll(RD, "remove.c4m"));
     CHECK(c4m::EncodePatch(pr) == readAll(RD, "remove.c4m") + pr.newID.String() + "\n");
 }
+
+TEST_CASE("range data vector: DecodePatchChain and ResolvePatchChain resolve both chains with their lists",
+          "[c4m][vector][sequence][range-data][chain]") {
+    // add-chain.c4m carries its lists in the patch section, remove-chain.c4m
+    // in the base section, before the checkpoint.
+    auto added = c4m::ResolvePatchChain(c4m::DecodePatchChain(std::string_view(readAll(RD, "add-chain.c4m"))));
+    CHECK(added.RangeData().size() == 2);
+    CHECK(added.Encode() == readAll(RD, "folded.c4m"));
+    auto removed = c4m::ResolvePatchChain(c4m::DecodePatchChain(std::string_view(readAll(RD, "remove-chain.c4m"))));
+    CHECK(removed.GetEntry("plate.[1001-1004].exr") == nullptr);
+    CHECK(removed.RangeData().size() == 1);
+    CHECK(removed.Encode() == readAll(RD, "no-plate.c4m"));
+}
+
+TEST_CASE("range data vector: DecodePatchChain keeps each section's lists with that section",
+          "[c4m][vector][sequence][range-data][chain]") {
+    auto add = c4m::DecodePatchChain(std::string_view(readAll(RD, "add-chain.c4m")));
+    REQUIRE(add.size() == 2);
+    CHECK(add[0].rangeData.empty());
+    CHECK(add[1].rangeData.size() == 2);
+    auto rm = c4m::DecodePatchChain(std::string_view(readAll(RD, "remove-chain.c4m")));
+    REQUIRE(rm.size() == 2);
+    CHECK(rm[0].rangeData.size() == 2);
+    CHECK(rm[1].rangeData.empty());
+    // Resolving only the base section keeps both of its lists.
+    CHECK(c4m::ResolvePatchChain(rm, 1).Encode() == readAll(RD, "folded.c4m"));
+}
