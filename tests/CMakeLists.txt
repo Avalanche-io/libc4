@@ -178,3 +178,11 @@ catch_discover_tests(c4m_vector_bytes_test)
 add_executable(c4m_flow_shaped_target_test c4m_flow_shaped_target_test.cpp)
 target_link_libraries(c4m_flow_shaped_target_test PRIVATE c4 Catch2::Catch2WithMain)
 catch_discover_tests(c4m_flow_shaped_target_test)
+
+# The shared changeset vector (c4 #175): EncodePatch writes c4 diff's bytes,
+# and every chain reader resolves the chain (2026-11-16).
+add_executable(c4m_changeset_vector_test c4m_changeset_vector_test.cpp)
+target_link_libraries(c4m_changeset_vector_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_changeset_vector_test PRIVATE
+    C4M_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+catch_discover_tests(c4m_changeset_vector_test)

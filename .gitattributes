@@ -14,3 +14,4 @@ tests/testdata/file-id/* -text
 tests/testdata/range-data-vector/* -text
 tests/testdata/sequence-size-vector/* -text
 tests/testdata/sequence-null-size-vector/* -text
+tests/testdata/changeset-vector/* -text
