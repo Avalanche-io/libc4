@@ -145,9 +145,16 @@ TEST_CASE("sequence size vector: expanded.c4m keeps the range at 303 and reads e
 //
 // Each output, encoded canonically, is the named file byte for byte. A
 // two-way merge is a three-way merge over an empty base, as Go's
-// Merge(nil, a, b). A patch is written by EncodePatch, as c4 diff writes
-// it: the old state's C4 ID, then the entries, then the lists of the
-// ranges it adds or changes.
+// Merge(nil, a, b). A patch is written as core release/1.0.27's c4 diff
+// writes it (cmd/c4/diff.go: the old state's C4 ID, then the encoded
+// patch): the entries, then the lists of the ranges it adds or changes.
+// On this line EncodePatch writes the same and then the new state's C4 ID
+// (dropping that line is not a sequence change and is not in 1.0.27), so
+// it is checked as the vector file followed by that ID.
+
+static std::string asDiffWrites(const c4m::PatchResult &pr) {
+    return pr.oldID.String() + "\n" + pr.patch.Encode();
+}
 
 TEST_CASE("range data vector: merge folded.c4m with plain.c4m, either order, is merged.c4m",
           "[c4m][vector][sequence][range-data][merge]") {
@@ -178,4 +185,20 @@ TEST_CASE("range data vector: a merge that removes the plate range drops its lis
     CHECK(r.conflicts.empty());
     CHECK(r.merged.GetEntry("plate.[1001-1004].exr") == nullptr);
     CHECK(r.merged.Encode() == readAll(RD, "no-plate.c4m"));
+}
+
+TEST_CASE("range data vector: diff plain.c4m to folded.c4m is add.c4m, both lists after the entries",
+          "[c4m][vector][sequence][range-data][diff]") {
+    auto pr = c4m::PatchDiff(parse(RD, "plain.c4m"), parse(RD, "folded.c4m"));
+    CHECK(pr.patch.RangeData().size() == 2);
+    CHECK(asDiffWrites(pr) == readAll(RD, "add.c4m"));
+    CHECK(c4m::EncodePatch(pr) == readAll(RD, "add.c4m") + pr.newID.String() + "\n");
+}
+
+TEST_CASE("range data vector: diff folded.c4m to no-plate.c4m is remove.c4m, a removal takes no list",
+          "[c4m][vector][sequence][range-data][diff]") {
+    auto pr = c4m::PatchDiff(parse(RD, "folded.c4m"), parse(RD, "no-plate.c4m"));
+    CHECK(pr.patch.RangeData().empty());
+    CHECK(asDiffWrites(pr) == readAll(RD, "remove.c4m"));
+    CHECK(c4m::EncodePatch(pr) == readAll(RD, "remove.c4m") + pr.newID.String() + "\n");
 }

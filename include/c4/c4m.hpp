@@ -278,7 +278,9 @@ DiffResult Diff(const Manifest &a, const Manifest &b);
 // EntryPaths builds a map from full path to entry pointer.
 std::map<std::string, const Entry *> EntryPaths(const std::vector<Entry> &entries);
 
-// EncodePatch encodes a PatchResult as c4m text (oldID + entries + newID).
+// EncodePatch encodes a PatchResult as c4m text: the old state's ID, the
+// entries, the inline ID lists of the ranges the patch adds or changes
+// (pr.patch.RangeData()), then the new state's ID.
 std::string EncodePatch(const PatchResult &pr);
 
 // DecodePatchChain parses c4m text into sections separated by bare C4 ID lines.

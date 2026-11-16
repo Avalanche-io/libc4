@@ -221,6 +221,19 @@ PatchResult PatchDiff(const Manifest &old_m, const Manifest &new_m) {
     PatchResult pr;
     for (auto &e : entries)
         pr.patch.AddEntry(std::move(e));
+    // The patch carries the lists of the ranges it adds or changes, from the
+    // new side. A removal line names a path the new state does not hold, so
+    // it takes none (Go's PatchDiff, c4 #159; range-data vector, add.c4m and
+    // remove.c4m). Through 2026-11-16 a patch carried no lists at all.
+    const auto new_paths = EntryPaths(new_m.Entries());
+    std::set<const Entry *> removed;
+    for (const auto &kv : EntryPaths(pr.patch.Entries()))
+        if (new_paths.find(kv.first) == new_paths.end())
+            removed.insert(kv.second);
+    const auto lists = detail::rangeDataFor(pr.patch.Entries(), {&new_m.RangeData()},
+                                            [&](const Entry &e) { return removed.count(&e) > 0; });
+    for (const auto &kv : lists)
+        pr.patch.SetRangeData(kv.first, kv.second);
     pr.oldID = old_m.ComputeC4ID();
     pr.newID = new_m.ComputeC4ID();
     return pr;
@@ -415,6 +428,20 @@ std::string EncodePatch(const PatchResult &pr) {
     // Patch entries
     for (const auto &entry : pr.patch.Entries()) {
         out += entry.Format(2);
+        out += '\n';
+    }
+
+    // The section's inline ID lists, the lists of the ranges it adds or
+    // changes, follow its entries sorted by the string form of each list's
+    // C4 ID, as Manifest::Encode and Go's encoder write them, before the
+    // new state's ID. Through 2026-11-16 a written patch carried none.
+    std::vector<std::pair<std::string, const std::string *>> lists;
+    lists.reserve(pr.patch.RangeData().size());
+    for (const auto &kv : pr.patch.RangeData())
+        lists.emplace_back(kv.first.String(), &kv.second);
+    std::sort(lists.begin(), lists.end());
+    for (const auto &kv : lists) {
+        out += *kv.second;
         out += '\n';
     }
 
