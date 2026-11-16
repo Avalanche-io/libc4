@@ -120,3 +120,13 @@ target_link_libraries(c4m_range_vectors_test PRIVATE c4 Catch2::Catch2WithMain)
 target_compile_definitions(c4m_range_vectors_test PRIVATE
     C4M_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 catch_discover_tests(c4m_range_vectors_test)
+
+# Every c4m file in the three sequence vectors round-trips as its README's
+# table says, compared by OpenSSL's SHA-512 (main's c4m_vector_bytes_test,
+# scoped to this line; 2026-11-16). Rows that state 1.1 rules are replaced
+# by what core release/1.0.27's library writes (testdata/line-1.0.27/).
+add_executable(c4m_sequence_vector_bytes_test c4m_sequence_vector_bytes_test.cpp)
+target_link_libraries(c4m_sequence_vector_bytes_test PRIVATE c4 OpenSSL::Crypto Catch2::Catch2WithMain)
+target_compile_definitions(c4m_sequence_vector_bytes_test PRIVATE
+    C4M_TESTDATA_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+catch_discover_tests(c4m_sequence_vector_bytes_test)
