@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// The range-data and sequence-size vectors, decode and normaliser half.
+// The range-data and sequence-size vectors: decode, operations and normaliser.
 //
 // The fixtures under testdata/range-data-vector/ and
 // testdata/sequence-size-vector/ are byte-identical copies of
@@ -13,11 +13,15 @@
 // size is its frames' bytes plus count x 90; a directory holding a range
 // counts it as one child, plus its listing as written.
 //
-// On the 1.0.x line Manifest::Parse does not resolve a chain: it skips bare
-// C4 IDs (resolving in the decoder is 1.1), so chains resolve through
-// DecodePatchChain and ResolvePatchChain. ApplyPatch keeps the lists of the
-// ranges its result holds. libc4 neither folds nor expands sequences: no
-// such operation, so the two expansion rows (#160) have nothing to run.
+// Every operation that builds a c4m from c4m inputs carries the lists of
+// the ranges its output holds: Merge, PatchDiff (written by EncodePatch),
+// ApplyPatch, DecodePatchChain with ResolvePatchChain, FilterByPath and
+// FilterByPrefix. This file runs every merge, diff and patch row of the
+// vector's MUST table. On the 1.0.x line Manifest::Parse does not resolve a
+// chain (it skips bare C4 IDs; resolving in the decoder is 1.1), so the
+// chain rows run through DecodePatchChain and ResolvePatchChain. libc4
+// neither folds nor expands sequences: no such operation, so the two
+// expansion rows (#160) have nothing to run here.
 
 #include "c4/c4m.hpp"
 #include "c4/c4.hpp"
@@ -228,4 +232,25 @@ TEST_CASE("range data vector: DecodePatchChain keeps each section's lists with t
     CHECK(rm[1].rangeData.empty());
     // Resolving only the base section keeps both of its lists.
     CHECK(c4m::ResolvePatchChain(rm, 1).Encode() == readAll(RD, "folded.c4m"));
+}
+
+// ---- Filters build a c4m from a c4m, so they carry the lists too ----
+//
+// The vector has no filter row; these hold FilterByPath and FilterByPrefix
+// to the same rule over the vector's files, as Go's do.
+
+TEST_CASE("range data vector: FilterByPath and FilterByPrefix carry the lists of the ranges they keep",
+          "[c4m][vector][sequence][range-data][filter]") {
+    const auto folded = parse(RD, "folded.c4m");
+    CHECK(folded.FilterByPrefix("").Encode() == readAll(RD, "folded.c4m"));
+    const c4m::Entry *shot = find(folded, "shot.[001-003].exr");
+    REQUIRE(shot != nullptr);
+    auto sub = folded.FilterByPrefix("sub/");
+    REQUIRE(sub.RangeData().size() == 1);
+    CHECK(sub.RangeData().begin()->first == shot->id);
+    auto plate = folded.FilterByPath("plate.*");
+    REQUIRE(plate.EntryCount() == 1);
+    REQUIRE(plate.RangeData().size() == 1);
+    CHECK(plate.RangeData().begin()->first == find(folded, "plate.[1001-1004].exr")->id);
+    CHECK(folded.FilterByPath("*.txt").RangeData().empty());
 }
