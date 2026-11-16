@@ -307,6 +307,9 @@ struct DiffResult {
 struct PatchSection {
     c4::ID baseID;               // C4 ID preceding this section (nil for first)
     std::vector<Entry> entries;   // Entries in this section
+    // The inline ID lists written in this section, after its entries, keyed
+    // by each list's own C4 ID (Go's PatchSection.RangeData).
+    std::map<c4::ID, std::string> rangeData;
 };
 
 // Conflict: a merge conflict where both sides changed the same path.
@@ -353,12 +356,15 @@ std::map<std::string, const Entry *> EntryPaths(const std::vector<Entry> &entrie
 std::string EncodePatch(const PatchResult &pr);
 
 // DecodePatchChain parses c4m text into sections separated by bare C4 ID
-// lines, without resolving or verifying them. A bare C4 ID at end of input
-// throws TrailingIDError.
+// lines, without resolving or verifying them. Each section keeps the inline
+// ID lists written in it. A bare C4 ID at end of input throws
+// TrailingIDError.
 std::vector<PatchSection> DecodePatchChain(std::istream &input);
 std::vector<PatchSection> DecodePatchChain(std::string_view data);
 
-// ResolvePatchChain applies patches sequentially. stopAt=0 means all.
+// ResolvePatchChain applies patches sequentially. stopAt=0 means all. The
+// result carries the ID list of every range it holds, from whichever
+// section carried it, and none for a range a patch removed.
 Manifest ResolvePatchChain(const std::vector<PatchSection> &sections, int stopAt = 0);
 
 // Merge performs a three-way merge. Returns merged manifest and conflicts.

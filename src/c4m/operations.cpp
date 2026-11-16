@@ -506,9 +506,14 @@ std::vector<PatchSection> DecodePatchChain(std::istream &input) {
         if (trimmed.empty())
             continue;
 
-        // Skip inline ID lists (range data)
-        if (isInlineIDList(trimmed))
+        // An inline ID list belongs to the section it is written in, keyed by
+        // its own C4 ID, as Go's DecodePatchChain keeps it. Through
+        // 2026-11-16 this reader skipped every list, so a chain read here
+        // lost the frames' C4 IDs of every folded range.
+        if (isInlineIDList(trimmed)) {
+            current.rangeData[c4::ID::Identify(std::string_view(trimmed))] = trimmed;
             continue;
+        }
 
         // Directive lines are refused, naming the line, as Manifest::Parse and
         // the Go reference's DecodePatchChain do. Through 1.0.x this reader
@@ -606,6 +611,14 @@ Manifest ResolvePatchChain(const std::vector<PatchSection> &sections, int stopAt
         m = ApplyPatch(m, patch);
     }
 
+    // The lists of the ranges the resolved state holds, from whichever
+    // section carried them, and no other, as Go's ResolvePatchChain (c4
+    // #159; range-data vector, add-chain.c4m and remove-chain.c4m). The
+    // sections above are applied without their lists, so m holds none yet.
+    std::vector<const detail::RangeLists *> lists;
+    for (int i = 0; i < limit; i++)
+        lists.push_back(&sections[static_cast<size_t>(i)].rangeData);
+    detail::keepRangeData(m, lists);
     return m;
 }
 
