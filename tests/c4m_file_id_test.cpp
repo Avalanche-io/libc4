@@ -17,6 +17,7 @@
 #include "c4/c4m.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstdio>
 #include <filesystem>
@@ -105,11 +106,15 @@ TEST_CASE("file ID: every identify path gives a c4m file its byte ID", "[c4m][fi
   }
 }
 
-TEST_CASE("file ID: a parseable non-canonical c4m's byte ID is not its description ID", "[c4m][file-id]") {
-    // The c4m diff chain parses on every line, so this is the case where a
-    // re-render would change the ID; the description ID is still there.
+TEST_CASE("file ID: a c4m diff chain that ends with a bare ID is refused, and its byte ID is its bytes", "[c4m][file-id]") {
+    // diff-chain.c4m was written by a c4 diff that still ended with the new
+    // state's bare ID. Parse now resolves chains as core release/1.0.27's
+    // decoder does, and that decoder refuses this file: the final ID opens
+    // a patch section with no entries ("c4m: empty patch section (at end of
+    // input)", measured with core eb33848). Through 1.0.26 Parse skipped
+    // every bare ID and read it as one concatenated listing. Its byte ID is
+    // its bytes either way.
     const std::string bytes = readAll(fixture("diff-chain.c4m"));
-    auto m = c4m::Manifest::Parse(bytes);
-    CHECK(m.ComputeC4ID().String() != kByteID.at("diff-chain.c4m"));
+    CHECK_THROWS_WITH(c4m::Manifest::Parse(bytes), Catch::Matchers::ContainsSubstring("empty patch section"));
     CHECK(c4::ID::IdentifyFile(fixture("diff-chain.c4m")).String() == kByteID.at("diff-chain.c4m"));
 }

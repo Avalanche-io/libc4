@@ -5,6 +5,7 @@
 
 #include "c4/c4m.hpp"
 #include "entry_line.hpp"
+#include "range_data.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -578,9 +579,42 @@ bool isPathName(const std::string &name) {
 } // namespace detail
 
 Manifest Manifest::Parse(std::istream &stream) {
+    // A chain is resolved here, as core release/1.0.27's Decode resolves it
+    // (c4m/decoder.go). A bare C4 ID on the first non-blank line is the
+    // external base. A later one is a block link that ends a section: the
+    // first section is the base's entries, and each section after a link is
+    // applied as a patch. A link with no entries after it is an empty patch
+    // and is refused, so a bare ID at the end of the input is an error (a
+    // c4m file never ends with its own ID, ruled 2026-11-08). As on core's
+    // 1.0.27 line the link is not verified against the state it follows.
+    // Through 1.0.26 this skipped every bare ID and concatenated the
+    // sections, so a chain read back with its removals still present and
+    // its modified entries twice, silently.
     Manifest m;
     int line_num = 0;
     int indent_width = -1; // auto-detect
+
+    std::vector<Entry> section;
+    std::map<c4::ID, std::string> lists;
+    bool first_line = true;
+    bool patch_mode = false;
+
+    auto flush = [&](int at) {
+        if (!patch_mode) {
+            for (auto &e : section)
+                m.entries_.push_back(std::move(e));
+        } else {
+            if (section.empty())
+                throw std::runtime_error("c4m: empty patch section (" +
+                                         (at > 0 ? "line " + std::to_string(at) : std::string("at end of input")) +
+                                         ")");
+            Manifest patch;
+            for (auto &e : section)
+                patch.AddEntry(std::move(e));
+            m = ApplyPatch(m, patch);
+        }
+        section.clear();
+    };
 
     std::string line;
     while (readLine(stream, line, line_num)) {
@@ -600,13 +634,21 @@ Manifest Manifest::Parse(std::istream &stream) {
         // list's C4 ID. Through 1.0.27's first cut they were skipped, so a
         // re-encoded c4m file lost its frame IDs.
         if (isInlineIDList(trimmed)) {
-            m.SetRangeData(c4::ID::Identify(std::string_view(trimmed)), trimmed);
+            lists[c4::ID::Identify(std::string_view(trimmed))] = trimmed;
             continue;
         }
 
-        // Skip bare C4 ID lines (patch boundaries -- not yet supported in C++ impl)
-        if (isBareC4ID(trimmed))
+        if (isBareC4ID(trimmed)) {
+            c4::ID id = c4::ID::Parse(trimmed);
+            if (first_line && section.empty()) {
+                m.SetBase(id); // external base reference
+            } else {
+                flush(line_num);
+                patch_mode = true;
+            }
+            first_line = false;
             continue;
+        }
 
         // Reject directive lines (lines starting with @).
         // Go reference behavior: directives are not supported.
@@ -615,9 +657,20 @@ Manifest Manifest::Parse(std::istream &stream) {
                                      std::to_string(line_num) + "): " + line);
         }
 
-        m.entries_.push_back(detail::parseEntryFromLine(line, indent_width, line_num));
+        section.push_back(detail::parseEntryFromLine(line, indent_width, line_num));
+        first_line = false;
     }
+    flush(0);
 
+    // A single section keeps every list it read. A resolved chain keeps the
+    // lists of the ranges its state holds and no other, as core's chain
+    // resolution does (c4 #159; range-data vector, remove-chain.c4m).
+    if (patch_mode) {
+        detail::keepRangeData(m, {&lists});
+    } else {
+        for (const auto &kv : lists)
+            m.SetRangeData(kv.first, kv.second);
+    }
     return m;
 }
 

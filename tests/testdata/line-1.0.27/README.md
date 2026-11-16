@@ -20,7 +20,7 @@ tables holds as master states it, including the two chains
 (`add-chain.c4m` to `folded.c4m`, `remove-chain.c4m` to `no-plate.c4m`),
 measured 2026-11-16.
 
-On this line `Manifest::Parse` does not resolve a chain: it skips bare C4
-IDs (resolving in the decoder is 1.1). The test resolves a file that
-`DecodePatchChain` reads as more than one section through
-`ResolvePatchChain`, and decodes every other file with `Manifest::Parse`.
+The test decodes every file with `Manifest::Parse`, which resolves a chain
+as core release/1.0.27's decoder does. Until that change, Parse concatenated a
+chain's sections, and the test resolved chains through `DecodePatchChain` and
+`ResolvePatchChain` instead.

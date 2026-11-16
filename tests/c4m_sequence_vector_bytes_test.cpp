@@ -22,9 +22,10 @@
 // testdata/line-1.0.27/README.md records. The vector files themselves are
 // master's, unedited.
 //
-// On this line Manifest::Parse does not resolve a chain (it skips bare C4
-// IDs; resolving in the decoder is 1.1), so a file DecodePatchChain reads as
-// more than one section is resolved through ResolvePatchChain.
+// Every file is decoded by Manifest::Parse, which resolves a chain as core
+// release/1.0.27's decoder does. Through 1.0.26 Parse concatenated a chain's
+// sections, and this test resolved chains through DecodePatchChain and
+// ResolvePatchChain instead.
 
 #include "c4/c4m.hpp"
 
@@ -147,12 +148,7 @@ std::vector<std::string> c4mFilesIn(const fs::path &dir) {
     return out;
 }
 
-// decode reads text as this line's readers do: a chain through
-// DecodePatchChain and ResolvePatchChain, anything else through Parse.
 c4m::Manifest decode(const std::string &text) {
-    auto sections = c4m::DecodePatchChain(std::string_view(text));
-    if (sections.size() > 1)
-        return c4m::ResolvePatchChain(sections);
     return c4m::Manifest::Parse(std::string_view(text));
 }
 

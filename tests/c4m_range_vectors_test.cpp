@@ -17,9 +17,9 @@
 // the ranges its output holds: Merge, PatchDiff (written by EncodePatch),
 // ApplyPatch, DecodePatchChain with ResolvePatchChain, FilterByPath and
 // FilterByPrefix. This file runs every merge, diff and patch row of the
-// vector's MUST table. On the 1.0.x line Manifest::Parse does not resolve a
-// chain (it skips bare C4 IDs; resolving in the decoder is 1.1), so the
-// chain rows run through DecodePatchChain and ResolvePatchChain. libc4
+// vector's MUST table. Chains resolve through Manifest::Parse, as core
+// release/1.0.27's decoder does, and through DecodePatchChain with
+// ResolvePatchChain; both are run. libc4
 // neither folds nor expands sequences: no such operation, so the two
 // expansion rows (#160) have nothing to run here.
 
@@ -78,6 +78,21 @@ c4m::Manifest nullSizes(const c4m::Manifest &m, std::initializer_list<std::strin
 }
 
 } // namespace
+
+TEST_CASE("range data vector: Parse resolves remove-chain.c4m to no-plate.c4m, the removed range's list gone",
+          "[c4m][vector][sequence][range-data][parse]") {
+    auto m = parse(RD, "remove-chain.c4m");
+    CHECK(m.GetEntry("plate.[1001-1004].exr") == nullptr);
+    CHECK(m.RangeData().size() == 1);
+    CHECK(m.Encode() == readAll(RD, "no-plate.c4m"));
+}
+
+TEST_CASE("range data vector: Parse resolves add-chain.c4m to folded.c4m with both lists",
+          "[c4m][vector][sequence][range-data][parse]") {
+    auto m = parse(RD, "add-chain.c4m");
+    CHECK(m.RangeData().size() == 2);
+    CHECK(m.Encode() == readAll(RD, "folded.c4m"));
+}
 
 TEST_CASE("range data vector: ApplyPatch keeps the lists of the ranges its result holds",
           "[c4m][vector][sequence][range-data]") {

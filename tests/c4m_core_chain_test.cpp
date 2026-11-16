@@ -113,3 +113,43 @@ TEST_CASE("core chain: a libc4 changeset appended to core's base.c4m reads back 
     fs::remove_all(dir);
 #endif
 }
+
+// ---- Manifest::Parse resolves a chain, as core release/1.0.27's Decode does ----
+//
+// Through 1.0.26 Parse skipped every bare C4 ID and concatenated the
+// sections, so a chain read as its base's entries followed by its patches'
+// lines: removals stayed, modifications appeared twice, and no error was
+// raised. On this line, as in core's 1.0.27 decoder: a first-line bare ID is
+// the external base; each later one is a block link that ends a section,
+// and the section after it is applied as a patch; a boundary with no
+// entries after it (an empty patch, including a bare ID at the end of the
+// input) is refused.
+
+TEST_CASE("core chain: Parse resolves core's chain to core's v2.c4m",
+          "[c4m][chain][core-1027][parse]") {
+    auto m = c4m::Manifest::Parse(std::string_view(fixture("chain.c4m")));
+    CHECK(m.GetEntry("sub/gone.txt") == nullptr);
+    CHECK(m.Encode() == fixture("v2.c4m"));
+}
+
+TEST_CASE("core chain: Parse resolves a libc4 changeset appended to core's base.c4m",
+          "[c4m][chain][core-1027][parse]") {
+    auto pr = c4m::PatchDiff(c4m::Manifest::Parse(std::string_view(fixture("base.c4m"))),
+                             c4m::Manifest::Parse(std::string_view(fixture("v2.c4m"))));
+    const std::string appended = fixture("base.c4m") + c4m::EncodePatch(pr);
+    CHECK(c4m::Manifest::Parse(std::string_view(appended)).Encode() == fixture("v2.c4m"));
+}
+
+TEST_CASE("core chain: Parse refuses an empty patch section, as core's 1.0.27 decoder does",
+          "[c4m][chain][core-1027][parse]") {
+    const std::string base = fixture("base.c4m");
+    const std::string id = c4m::Manifest::Parse(std::string_view(base)).ComputeC4ID().String();
+    // A bare C4 ID at the end of the input.
+    CHECK_THROWS(c4m::Manifest::Parse(std::string_view(base + id + "\n")));
+    // Two boundaries with nothing between them, after a patch.
+    const std::string chain = fixture("chain.c4m");
+    const std::string v2id = c4m::Manifest::Parse(std::string_view(fixture("v2.c4m"))).ComputeC4ID().String();
+    CHECK_THROWS(c4m::Manifest::Parse(std::string_view(chain + v2id + "\n" + v2id + "\n" + "-rw-r--r-- 2026-01-02T09:04:05Z 3 top.txt -\n")));
+    // A first-line base followed by entries is not a chain, and still reads.
+    CHECK_NOTHROW(c4m::Manifest::Parse(std::string_view(id + "\n" + base)));
+}
