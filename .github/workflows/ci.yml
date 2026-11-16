@@ -21,6 +21,16 @@ jobs:
       - name: Install OpenSSL (macOS)
         if: runner.os == 'macOS'
         run: brew install openssl@3
-      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      # core's c4 at release/1.0.27, for c4m_core_chain_test: a changeset
+      # libc4 writes, appended to a c4m core wrote, must read back in core.
+      # Pinned to c4 release/1.0.27 eb33848, so moving it is a deliberate bump.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - run: go install github.com/Avalanche-io/c4/cmd/c4@eb33848
+        env:
+          GOBIN: ${{ runner.temp }}/core-1027
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DC4_CORE_BIN="${{ runner.temp }}/core-1027/c4"
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure

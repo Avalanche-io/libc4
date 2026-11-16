@@ -433,8 +433,8 @@ std::string EncodePatch(const PatchResult &pr) {
 
     // The section's inline ID lists, the lists of the ranges it adds or
     // changes, follow its entries sorted by the string form of each list's
-    // C4 ID, as Manifest::Encode and Go's encoder write them, before the
-    // new state's ID. Through 2026-11-16 a written patch carried none.
+    // C4 ID, as Manifest::Encode and Go's encoder write them. Through
+    // 2026-11-16 a written patch carried none.
     std::vector<std::pair<std::string, const std::string *>> lists;
     lists.reserve(pr.patch.RangeData().size());
     for (const auto &kv : pr.patch.RangeData())
@@ -445,12 +445,10 @@ std::string EncodePatch(const PatchResult &pr) {
         out += '\n';
     }
 
-    // New ID (page boundary)
-    if (!pr.newID.IsNil()) {
-        out += pr.newID.String();
-        out += '\n';
-    }
-
+    // Nothing follows: a bare ID here would be the new state's own ID, and a
+    // c4m file never ends with its own ID (ruled 2026-11-08; core release/
+    // 1.0.27's c4 diff, 3ecd6ea). Through 1.0.26 this wrote pr.newID here.
+    // The patch resolves to pr.newID.
     return out;
 }
 

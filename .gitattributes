@@ -13,3 +13,4 @@ tests/testdata/range-data-vector/* -text
 tests/testdata/sequence-size-vector/* -text
 tests/testdata/sequence-null-size-vector/* -text
 tests/testdata/line-1.0.27/** -text
+tests/testdata/core-1027-chain/* -text

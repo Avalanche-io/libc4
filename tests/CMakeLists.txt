@@ -151,3 +151,16 @@ target_link_libraries(c4m_sequence_vector_bytes_test PRIVATE c4 OpenSSL::Crypto 
 target_compile_definitions(c4m_sequence_vector_bytes_test PRIVATE
     C4M_TESTDATA_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 catch_discover_tests(c4m_sequence_vector_bytes_test)
+
+# A changeset libc4 writes, appended to a c4m core wrote, reads back in
+# libc4 and in core (2026-11-16). The fixture is core release/1.0.27's.
+# -DC4_CORE_BIN=<core's c4 at release/1.0.27> also resolves it with core.
+set(C4_CORE_BIN "" CACHE FILEPATH "core's c4 binary at release/1.0.27, for the cross-implementation chain test")
+add_executable(c4m_core_chain_test c4m_core_chain_test.cpp)
+target_link_libraries(c4m_core_chain_test PRIVATE c4 Catch2::Catch2WithMain)
+target_compile_definitions(c4m_core_chain_test PRIVATE
+    C4M_CORE_CHAIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata/core-1027-chain")
+if(C4_CORE_BIN)
+    target_compile_definitions(c4m_core_chain_test PRIVATE C4M_CORE_BIN="${C4_CORE_BIN}")
+endif()
+catch_discover_tests(c4m_core_chain_test)

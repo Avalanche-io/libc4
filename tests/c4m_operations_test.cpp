@@ -275,11 +275,15 @@ TEST_CASE("EncodePatch: basic structure", "[c4m][ops]") {
     auto pr = c4m::PatchDiff(old_m, new_m);
     std::string encoded = c4m::EncodePatch(pr);
 
-    // Should contain old ID, entries, new ID
+    // The old ID as the boundary, then the entries, nothing after: a c4m
+    // file never ends with its own ID (2026-11-08), so the new ID is absent.
     REQUIRE_FALSE(encoded.empty());
-    REQUIRE(encoded.find(pr.oldID.String()) != std::string::npos);
-    REQUIRE(encoded.find(pr.newID.String()) != std::string::npos);
+    REQUIRE(encoded.rfind(pr.oldID.String() + "\n", 0) == 0);
+    REQUIRE(encoded.find(pr.newID.String()) == std::string::npos);
     REQUIRE(encoded.find("b.txt") != std::string::npos);
+    std::string last = encoded.substr(0, encoded.size() - 1);
+    last = last.substr(last.rfind('\n') + 1);
+    REQUIRE(last.find("b.txt") != std::string::npos);
 }
 
 // =============================================================
