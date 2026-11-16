@@ -3,6 +3,7 @@
 
 #include "c4/c4m.hpp"
 #include "entry_line.hpp"
+#include "range_data.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -531,6 +532,9 @@ Manifest Manifest::FilterByPath(const std::string &pattern) const {
         if (globMatch(pattern, entry.name))
             result.entries_.push_back(entry);
     }
+    // The lists of the ranges kept and no other, as Go's FilterByPath (c4
+    // #159). Through 2026-11-16 a filtered c4m carried no lists at all.
+    detail::keepRangeData(result, {&range_data_});
     return result;
 }
 
@@ -545,6 +549,8 @@ Manifest Manifest::FilterByPrefix(const std::string &prefix) const {
             result.entries_.push_back(entry);
         }
     }
+    // The lists of the ranges kept and no other, as Go's FilterByPrefix.
+    detail::keepRangeData(result, {&range_data_});
     return result;
 }
 
