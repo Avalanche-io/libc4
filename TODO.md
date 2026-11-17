@@ -7,7 +7,6 @@
 - [x] Patch-chain resolution in the decoder: verified checkpoints (grammar erratum 2026-07-13; shared chain-vector conformance test); a bare C4 ID at end of input is refused as TrailingIDError on both readers (ruled 2026-11-08; no closing validator)
 - [ ] No normaliser: libc4 cannot migrate a file ending with a bare ID; `c4 id FILE.c4m` (c4 1.1) rewrites it
 - [~] Sequence detection and frame range parsing (partial)
-- [~] Intersect operation (free function exists, limited scope)
 
 ## Python Bindings
 - Add pybind11/nanobind subdirectory
