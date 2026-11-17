@@ -5,7 +5,6 @@
 - [x] Generate cross-language test vectors from Go implementation
 - [x] Diff, merge operations (free functions: c4m::Diff, c4m::Merge)
 - [~] Sequence detection and frame range parsing (partial)
-- [~] Intersect operation (free function exists, limited scope)
 
 ## Python Bindings
 - Add pybind11/nanobind subdirectory

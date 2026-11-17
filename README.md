@@ -10,7 +10,7 @@ C/C++ reference implementation of the C4 ID system ([SMPTE ST 2114:2017](https:/
 
 auto id = c4::ID::Identify("hello world");
 std::cout << id << std::endl;
-// output: c4YGsLNdHGW3vnRB... (90 characters)
+// output: c41yP4cqy7jmaRDz... (90 characters)
 ```
 
 ## What is C4?
@@ -23,8 +23,8 @@ This library provides:
 - **C4 ID encoding** — base58 encoding with `c4` prefix (90 chars)
 - **Tree IDs** — compute a single ID for a set of IDs
 - **C4M format** — parse and generate `.c4m` files
-- **C4M operations** — diff, merge, intersect manifests
-- **Dual API** — C API (`c4.h`) for maximum portability, C++ API (`c4.hpp`) for ergonomics
+- **C4M operations** — diff and merge manifests
+- **Dual API for C4 IDs** — C API (`c4.h`) for maximum portability, C++ API (`c4.hpp`) for ergonomics; the c4m API is C++ only (`c4m.hpp`). `include/c4/c4m.h` declares a C API for c4m files that is not implemented, so nothing can link against it
 
 ## Building
 
@@ -90,7 +90,7 @@ This implementation produces identical output to the [Go reference implementatio
 
 ## Design Decisions
 
-See the [FAQ](https://github.com/Avalanche-io/c4/blob/main/docs/faq.md) for design decisions including SHA-512 permanence, the c4m format, and content store scaling.
+See the [FAQ](https://github.com/Avalanche-io/c4/blob/release/1.0.x/docs/faq.md) for design decisions including SHA-512 permanence, the c4m format, and content store scaling.
 
 ## License
 
