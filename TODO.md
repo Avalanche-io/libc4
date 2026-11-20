@@ -1,7 +1,7 @@
 # libc4 TODO
 
 ## C4M Parser
-- [x] Implement .c4m format parser against specification (94+ tests passing)
+- [x] Implement .c4m format parser against specification
 - [x] Generate cross-language test vectors from Go implementation
 - [x] Diff, merge operations (free functions: c4m::Diff, c4m::Merge)
 - [~] Sequence detection and frame range parsing (partial)
@@ -14,7 +14,7 @@
 ## Packaging
 - vcpkg / Conan packaging
 - pkg-config file generation
-- GitHub Actions CI (macOS, Linux, Windows)
+- [x] GitHub Actions CI on macOS and Linux (`.github/workflows/ci.yml`); Windows not yet
 
 ## License
 - [x] Apache 2.0

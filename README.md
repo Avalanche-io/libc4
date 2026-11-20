@@ -7,6 +7,7 @@ C/C++ reference implementation of the C4 ID system ([SMPTE ST 2114:2017](https:/
 
 ```cpp
 #include <c4/c4.hpp>
+#include <iostream>
 
 auto id = c4::ID::Identify("hello world");
 std::cout << id << std::endl;
@@ -73,6 +74,7 @@ auto result = c4m::Diff(old_manifest, new_manifest);
 
 ```c
 #include <c4/c4.h>
+#include <stdio.h>
 
 c4_id_t *id = c4_id_new();
 c4_identify("some data", 9, id);
