@@ -1,5 +1,11 @@
 # c4 Go reference release v1.0.13 — port report for libc4
 
+> **Status:** a record of the v1.0.13 port, not a guide to current behaviour.
+> One rule below no longer holds: a null child timestamp does not make its
+> directory's timestamp null. A directory's timestamp is the directory's own
+> modification time (c4 core's `c4m/SPECIFICATION.md`, "Directory
+> Timestamps").
+
 The Go reference implementation at `~/ws/active/c4/oss/c4` cut v1.0.13 with
 seven changes. Some are algorithmic bugs that almost certainly exist in C
 too; others are API additions you may or may not want to mirror. This
